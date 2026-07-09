@@ -56,19 +56,23 @@ export function DevicePage() {
       method: "PUT",
       body: JSON.stringify(Object.fromEntries(form.entries()))
     });
-    setMessage(`Port ${selectedPort.portNumber} updated.`);
+    setMessage(`${selectedPort.portLabel} updated.`);
     loadDevice();
   }
 
   async function removeConnection() {
     if (!selectedPort) return;
     await apiFetch<SwitchPort>(`/api/ports/${selectedPort.id}/connection`, { method: "DELETE" });
-    setMessage(`Port ${selectedPort.portNumber} connection removed.`);
+    setMessage(`${selectedPort.portLabel} connection removed.`);
     loadDevice();
   }
 
   if (!device) return <div>Loading switch...</div>;
   const isPowerSupply = device.deviceType.toLowerCase().includes("power");
+  const copperPorts = device.ports.filter((port) => port.portType === "RJ45");
+  const fiberPorts = device.ports.filter((port) => port.portType === "SFP");
+  const powerSockets = device.ports.filter((port) => port.portType === "POWER_SOCKET");
+  const visiblePorts = isPowerSupply ? powerSockets : copperPorts;
 
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_390px]">
@@ -121,21 +125,28 @@ export function DevicePage() {
           <h2 className="mb-3 text-xl font-bold">{isPowerSupply ? "Power Supply Sockets" : "Switch Front Panel"}</h2>
           <div className="rounded-xl border border-slate-600 bg-slate-950 p-4">
             <div className="mb-4 grid grid-cols-5 gap-2 sm:grid-cols-10">
-              {device.ports.map((port) => (
+              {visiblePorts.map((port) => (
                 <button
                   key={port.id}
                   onClick={() => setSelectedPort(port)}
                   className={`min-h-16 rounded-lg border p-2 text-left text-xs transition hover:-translate-y-1 ${statusColor(port.status)} ${selectedPort?.id === port.id ? "ring-2 ring-cyan-300" : ""}`}
                 >
-                  <div className="font-bold">{isPowerSupply ? `S${port.portNumber}` : `P${port.portNumber}`}</div>
+                  <div className="font-bold">{isPowerSupply ? `S${port.portNumber}` : port.portLabel.replace("Port ", "P")}</div>
                   <div className="truncate">{port.connectedDeviceName ?? "-"}</div>
                 </button>
               ))}
             </div>
-            {!isPowerSupply && (
+            {!isPowerSupply && fiberPorts.length > 0 && (
               <div className="grid grid-cols-4 gap-2">
-                {["SFP1", "SFP2", "SFP3", "SFP4"].map((label) => (
-                  <div key={label} className="rounded-lg border border-violet-300/50 bg-violet-400/20 p-2 text-center text-xs">{label}</div>
+                {fiberPorts.map((port) => (
+                  <button
+                    key={port.id}
+                    onClick={() => setSelectedPort(port)}
+                    className={`rounded-lg border border-violet-300/50 bg-violet-400/20 p-2 text-center text-xs transition hover:-translate-y-1 ${selectedPort?.id === port.id ? "ring-2 ring-cyan-300" : ""}`}
+                  >
+                    <div className="font-bold">{port.portLabel.replace(" ", "")}</div>
+                    <div className="truncate">{port.connectedDeviceName ?? "-"}</div>
+                  </button>
                 ))}
               </div>
             )}
@@ -147,7 +158,7 @@ export function DevicePage() {
         {message && <div className="glass-soft rounded-xl p-3 text-sm text-emerald-200">{message}</div>}
         {selectedPort && (
           <Card>
-            <h2 className="mb-3 text-xl font-bold">{isPowerSupply ? "Socket" : "Port"} {selectedPort.portNumber}</h2>
+            <h2 className="mb-3 text-xl font-bold">{isPowerSupply ? "Socket" : selectedPort.portType} {selectedPort.portLabel.replace("Port ", "")}</h2>
             <div className="mb-4 grid grid-cols-2 gap-2 text-sm">
               {[
                 ["Status", selectedPort.status],

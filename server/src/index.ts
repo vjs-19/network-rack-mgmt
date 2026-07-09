@@ -355,18 +355,32 @@ app.get("/api/devices/:id", requireAuth, async (req, res) => {
 });
 
 app.post("/api/devices", requireAuth, async (req, res) => {
-  const { portCount, socketCount, ...deviceInput } = req.body;
+  const { portCount, copperPortCount, sfpPortCount, socketCount, ...deviceInput } = req.body;
   const device = await prisma.device.create({ data: deviceInput });
 
   if (device.deviceType.toLowerCase().includes("switch")) {
-    const count = Number(portCount) > 0 ? Number(portCount) : 10;
-    for (let portNumber = 1; portNumber <= count; portNumber += 1) {
+    const copperCount = Number(copperPortCount) >= 0 ? Number(copperPortCount) : Number(portCount) > 0 ? Number(portCount) : 10;
+    const sfpCount = Number(sfpPortCount) >= 0 ? Number(sfpPortCount) : 0;
+
+    for (let portNumber = 1; portNumber <= copperCount; portNumber += 1) {
       await prisma.switchPort.create({
         data: {
           deviceId: device.id,
           portNumber,
           portLabel: `Port ${portNumber}`,
           portType: "RJ45",
+          status: "DISCONNECTED"
+        }
+      });
+    }
+
+    for (let sfpNumber = 1; sfpNumber <= sfpCount; sfpNumber += 1) {
+      await prisma.switchPort.create({
+        data: {
+          deviceId: device.id,
+          portNumber: copperCount + sfpNumber,
+          portLabel: `SFP ${sfpNumber}`,
+          portType: "SFP",
           status: "DISCONNECTED"
         }
       });

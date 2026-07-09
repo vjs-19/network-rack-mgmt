@@ -40,6 +40,8 @@ export function RackPage() {
     startUnit: 42,
     heightUnits: 1,
     portCount: 10,
+    copperPortCount: 48,
+    sfpPortCount: 4,
     socketCount: 8,
     notes: ""
   });
@@ -59,6 +61,8 @@ export function RackPage() {
       serialNumber: "",
       heightUnits,
       portCount: deviceType.includes("Switch") ? current.portCount : 0,
+      copperPortCount: deviceType.includes("Switch") ? current.copperPortCount : 0,
+      sfpPortCount: deviceType.includes("Switch") ? current.sfpPortCount : 0,
       socketCount: deviceType.includes("Power") ? 8 : 0,
       notes: ""
     }));
@@ -97,6 +101,8 @@ export function RackPage() {
         startUnit: Number(deviceForm.startUnit),
         heightUnits: Number(deviceForm.heightUnits),
         portCount: Number(deviceForm.portCount),
+        copperPortCount: Number(deviceForm.copperPortCount),
+        sfpPortCount: Number(deviceForm.sfpPortCount),
         socketCount: Number(deviceForm.socketCount)
       })
     });
@@ -257,8 +263,14 @@ export function RackPage() {
               <div className="grid grid-cols-3 gap-2">
                 <Input type="number" title="Start U" value={deviceForm.startUnit} onChange={(event) => setDeviceForm((current) => ({ ...current, startUnit: Number(event.target.value) }))} />
                 <Input type="number" title="Height U" value={deviceForm.heightUnits} onChange={(event) => setDeviceForm((current) => ({ ...current, heightUnits: Number(event.target.value) }))} />
-                <Input type="number" title="Ports" value={deviceForm.portCount} onChange={(event) => setDeviceForm((current) => ({ ...current, portCount: Number(event.target.value) }))} />
+                <Input type="number" title="Total Ports" value={deviceForm.portCount} onChange={(event) => setDeviceForm((current) => ({ ...current, portCount: Number(event.target.value) }))} />
               </div>
+              {deviceForm.deviceType.toLowerCase().includes("switch") && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Input type="number" min={0} placeholder="Copper RJ45 Ports" value={deviceForm.copperPortCount} onChange={(event) => setDeviceForm((current) => ({ ...current, copperPortCount: Number(event.target.value), portCount: Number(event.target.value) + current.sfpPortCount }))} />
+                  <Input type="number" min={0} placeholder="Fiber SFP Ports" value={deviceForm.sfpPortCount} onChange={(event) => setDeviceForm((current) => ({ ...current, sfpPortCount: Number(event.target.value), portCount: current.copperPortCount + Number(event.target.value) }))} />
+                </div>
+              )}
               {deviceForm.deviceType.toLowerCase().includes("power") && (
                 <Input type="number" placeholder="Power Sockets" value={deviceForm.socketCount} onChange={(event) => setDeviceForm((current) => ({ ...current, socketCount: Number(event.target.value) }))} />
               )}
