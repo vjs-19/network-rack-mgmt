@@ -1,6 +1,6 @@
-import { Plus, QrCode, Upload } from "lucide-react";
+import { Plus, QrCode, Trash2, Upload } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
@@ -10,6 +10,7 @@ import type { HubRoom } from "../types";
 
 export function HubRoomPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const [room, setRoom] = useState<HubRoom | null>(null);
   const [message, setMessage] = useState("");
   const [rackForm, setRackForm] = useState({
@@ -53,6 +54,24 @@ export function HubRoomPage() {
     loadRoom();
   }
 
+  async function deleteRack(rackId: string, rackName: string) {
+    const confirmed = window.confirm(`Delete ${rackName}? This removes devices and ports inside that rack.`);
+    if (!confirmed) return;
+
+    await apiFetch(`/api/racks/${rackId}`, { method: "DELETE" });
+    setMessage(`${rackName} deleted.`);
+    loadRoom();
+  }
+
+  async function deleteHubRoom() {
+    if (!room) return;
+    const confirmed = window.confirm(`Delete ${room.name}? This removes all racks, devices, and ports inside this hub room.`);
+    if (!confirmed) return;
+
+    await apiFetch(`/api/hub-rooms/${room.id}`, { method: "DELETE" });
+    navigate("/");
+  }
+
   if (!room) return <div>Loading hub room...</div>;
 
   return (
@@ -65,6 +84,7 @@ export function HubRoomPage() {
         <div className="flex gap-2">
           <Button variant="secondary"><Upload size={16} /> Upload Room Layout</Button>
           <Button variant="secondary"><QrCode size={16} /> Hub QR</Button>
+          <Button variant="danger" onClick={deleteHubRoom}><Trash2 size={16} /> Delete Hub Room</Button>
         </div>
       </div>
 
@@ -74,18 +94,22 @@ export function HubRoomPage() {
             <div className="absolute inset-4 rounded-xl border border-dashed border-cyan-300/30" />
             <div className="relative grid gap-5 sm:grid-cols-3">
               {room.racks.map((rack) => (
-                <Link
+                <div
                   key={rack.id}
-                  to={`/racks/${rack.id}`}
                   className="group rounded-xl border border-cyan-300/30 bg-cyan-300/10 p-4 text-center transition hover:-translate-y-2 hover:bg-cyan-300/20"
                 >
-                  <div className="mx-auto mb-3 h-52 w-28 rounded-lg border-4 border-slate-500 bg-slate-900 shadow-2xl group-hover:border-cyan-300">
-                    <div className="h-6 rounded-t bg-slate-700 text-xs leading-6 text-slate-200">{rack.unitCount}U</div>
-                    <div className="mx-auto mt-3 h-32 w-20 rounded border border-slate-600 bg-gradient-to-b from-slate-800 to-slate-950" />
-                  </div>
-                  <div className="font-bold">{rack.name}</div>
-                  <div className="text-xs text-slate-400">{rack.devices.length} devices</div>
-                </Link>
+                  <Link to={`/racks/${rack.id}`} className="block">
+                    <div className="mx-auto mb-3 h-52 w-28 rounded-lg border-4 border-slate-500 bg-slate-900 shadow-2xl group-hover:border-cyan-300">
+                      <div className="h-6 rounded-t bg-slate-700 text-xs leading-6 text-slate-200">{rack.unitCount}U</div>
+                      <div className="mx-auto mt-3 h-32 w-20 rounded border border-slate-600 bg-gradient-to-b from-slate-800 to-slate-950" />
+                    </div>
+                    <div className="font-bold">{rack.name}</div>
+                    <div className="text-xs text-slate-400">{rack.devices.length} devices</div>
+                  </Link>
+                  <Button type="button" variant="danger" className="mt-3 w-full" onClick={() => deleteRack(rack.id, rack.name)}>
+                    <Trash2 size={16} /> Delete Rack
+                  </Button>
+                </div>
               ))}
             </div>
             {room.racks.length === 0 && (
@@ -120,6 +144,23 @@ export function HubRoomPage() {
           <Card>
             <h2 className="mb-2 font-black">Room Layout Setup</h2>
             <p className="muted-copy text-sm leading-6">Create each physical rack here first. After racks appear in the room layout, open a rack to add or manage devices at U positions.</p>
+          </Card>
+          <Card>
+            <h2 className="mb-2 font-black">Delete Racks</h2>
+            <div className="space-y-2">
+              {room.racks.map((rack) => (
+                <div key={rack.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/10 p-3">
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold">{rack.name}</div>
+                    <div className="text-xs text-slate-400">{rack.devices.length} devices</div>
+                  </div>
+                  <Button type="button" variant="danger" onClick={() => deleteRack(rack.id, rack.name)} title="Delete this rack only">
+                    <Trash2 size={16} />
+                  </Button>
+                </div>
+              ))}
+              {room.racks.length === 0 && <p className="muted-copy text-sm">No racks to delete.</p>}
+            </div>
           </Card>
         </aside>
       </div>
