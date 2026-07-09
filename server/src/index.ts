@@ -287,7 +287,6 @@ app.get("/api/audit-logs", requireAuth, async (_req, res) => {
 });
 
 app.get("/api/qr-items", requireAuth, async (req, res) => {
-  const baseUrl = `${req.protocol}://${req.get("host")}`;
   const [hubRooms, racks, devices] = await Promise.all([
     prisma.hubRoom.findMany({ orderBy: { name: "asc" }, include: { floor: { include: { block: { include: { building: true } } } } } }),
     prisma.rack.findMany({ orderBy: { name: "asc" }, include: { hubRoom: true } }),
@@ -301,7 +300,7 @@ app.get("/api/qr-items", requireAuth, async (req, res) => {
       label: room.name,
       location: `${room.floor.block.building.name} / ${room.floor.block.name} / ${room.floor.name}`,
       href: `/hub-rooms/${room.id}`,
-      qrUrl: `${baseUrl}/api/qr/hub-room/${room.id}`,
+      qrUrl: `/api/qr/hub-room/${room.id}`,
     })),
     ...racks.map((rack) => ({
       id: rack.id,
@@ -309,7 +308,7 @@ app.get("/api/qr-items", requireAuth, async (req, res) => {
       label: rack.name,
       location: rack.hubRoom.name,
       href: `/racks/${rack.id}`,
-      qrUrl: `${baseUrl}/api/qr/rack/${rack.id}`,
+      qrUrl: `/api/qr/rack/${rack.id}`,
     })),
     ...devices.map((device) => ({
       id: device.id,
@@ -317,7 +316,7 @@ app.get("/api/qr-items", requireAuth, async (req, res) => {
       label: device.name,
       location: `${device.rack.hubRoom.name} / ${device.rack.name}`,
       href: `/devices/${device.id}`,
-      qrUrl: `${baseUrl}/api/qr/device/${device.id}`,
+      qrUrl: `/api/qr/device/${device.id}`,
     })),
   ]);
 });
@@ -922,7 +921,9 @@ app.post("/api/import-export/import/:type", requireAuth, importUpload.single("fi
 });
 
 app.get("/api/qr/:type/:id", async (req, res) => {
-  const frontendUrl = req.headers.origin ?? "http://localhost:5173";
+  const forwardedHost = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost:5173";
+  const forwardedProto = req.get("x-forwarded-proto") ?? req.protocol;
+  const frontendUrl = `${forwardedProto}://${forwardedHost}`;
   const type = param(req.params.type);
   const id = param(req.params.id);
   const path = type === "hub-room" ? `/hub-rooms/${id}` : type === "device" ? `/devices/${id}` : `/racks/${id}`;
