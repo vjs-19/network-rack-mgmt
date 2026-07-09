@@ -117,8 +117,13 @@ async function findOrCreateBlock(name: string, buildingId: string) {
 }
 
 async function findOrCreateFloor(name: string, blockId: string, level: number) {
-  const existing = await prisma.floor.findFirst({ where: { name, blockId } });
-  return existing ?? prisma.floor.create({ data: { name, blockId, level } });
+  const existingByLevel = await prisma.floor.findFirst({ where: { blockId, level } });
+  if (existingByLevel) {
+    return existingByLevel.name === name ? existingByLevel : prisma.floor.update({ where: { id: existingByLevel.id }, data: { name } });
+  }
+
+  const existingByName = await prisma.floor.findFirst({ where: { name, blockId } });
+  return existingByName ?? prisma.floor.create({ data: { name, blockId, level } });
 }
 
 async function findOrCreateHubRoom(name: string, floorId: string, type = "Hub Room", notes?: string) {

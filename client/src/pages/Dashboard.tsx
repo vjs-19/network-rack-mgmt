@@ -39,7 +39,11 @@ type DashboardData = {
 const connectedPorts = 45;
 
 function floorNameFromLevel(level: number) {
-  return `Floor Level ${Number.isFinite(level) ? level : 0}`;
+  if (level === 0) return "Ground Floor";
+  if (level === 1) return "First Floor";
+  if (level === 2) return "Second Floor";
+  if (level === 3) return "Third Floor";
+  return `Floor ${Number.isFinite(level) ? level : 0}`;
 }
 
 export function Dashboard() {
@@ -255,7 +259,7 @@ export function Dashboard() {
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div>
                     <h3 className="text-xl font-black">{block.name}</h3>
-                    <p className="muted-copy text-xs">{block.floors.length} floor{block.floors.length === 1 ? "" : "s"}</p>
+                    <p className="muted-copy text-xs">{block.floors.filter((floor) => floor.hubRooms.length > 0).length} floor{block.floors.filter((floor) => floor.hubRooms.length > 0).length === 1 ? "" : "s"}</p>
                   </div>
                   <div className="grid h-11 w-11 place-items-center rounded-xl bg-cyan-300/12 text-cyan-300">
                     <Building2 />
@@ -263,10 +267,10 @@ export function Dashboard() {
                 </div>
 
                 <div className="space-y-4">
-                  {block.floors.map((floor) => (
+                  {block.floors.filter((floor) => floor.hubRooms.length > 0).map((floor) => (
                     <div key={floor.id}>
                       <div className="muted-copy mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide">
-                        <RadioTower size={14} /> {floor.name}
+                        <RadioTower size={14} /> {floorNameFromLevel(floor.level)}
                       </div>
                       <div className="space-y-2">
                         {floor.hubRooms.map((room) => (
