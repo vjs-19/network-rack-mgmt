@@ -235,11 +235,11 @@ app.get("/api/dashboard", requireAuth, async (_req, res) => {
   ]);
 
   const blockCards = await prisma.block.findMany({
-    include: { floors: { include: { hubRooms: true } } },
+    include: { floors: { orderBy: { level: "asc" }, include: { hubRooms: true } } },
   });
   const buildingCards = await prisma.building.findMany({
     orderBy: { createdAt: "asc" },
-    include: { blocks: { include: { floors: { include: { hubRooms: true } } } } },
+    include: { blocks: { include: { floors: { orderBy: { level: "asc" }, include: { hubRooms: true } } } } },
   });
 
   res.json({ counts: { buildings, blocks, floors, hubRooms, racks, devices, ports }, blocks: blockCards, buildings: buildingCards });
