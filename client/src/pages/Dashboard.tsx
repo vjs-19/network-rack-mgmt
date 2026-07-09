@@ -2,7 +2,6 @@ import {
   Activity,
   ArrowRight,
   Building2,
-  Cable,
   Check,
   Edit3,
   Layers3,
@@ -303,20 +302,6 @@ export function Dashboard() {
               <Textarea placeholder="Notes" value={newLocation.hubRoomNotes} onChange={(event) => setNewLocation((current) => ({ ...current, hubRoomNotes: event.target.value }))} />
               <Button className="w-full">Add Hub Room</Button>
             </form>
-          </Card>
-
-          <Card>
-            <h2 className="mb-4 flex items-center gap-2 text-lg font-black">
-              <Cable className="text-cyan-300" size={20} /> Operations Flow
-            </h2>
-            <div className="space-y-3 text-sm">
-              {["Select the hub room", "Open the rack layout", "Inspect the switch front panel", "Click a port and update data"].map((step, index) => (
-                <div key={step} className="glass-soft flex gap-3 rounded-xl p-3">
-                  <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 text-sm font-black text-slate-950">{index + 1}</div>
-                  <div className="font-semibold">{step}</div>
-                </div>
-              ))}
-            </div>
           </Card>
 
           <Card>
