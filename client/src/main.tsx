@@ -3,11 +3,14 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import "./index.css";
+import { AdminPage } from "./pages/AdminPage";
+import { AlertsPage } from "./pages/AlertsPage";
 import { AppLayout } from "./components/AppLayout";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { CableTracePage } from "./pages/CableTracePage";
 import { Dashboard } from "./pages/Dashboard";
 import { DevicePage } from "./pages/DevicePage";
+import { DiscoveryPage } from "./pages/DiscoveryPage";
 import { HelpPage } from "./pages/HelpPage";
 import { HubRoomPage } from "./pages/HubRoomPage";
 import { ImportExportPage } from "./pages/ImportExportPage";
@@ -41,6 +44,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="trace" element={<CableTracePage />} />
           <Route path="qr-codes" element={<QrCodesPage />} />
           <Route path="audit-logs" element={<AuditLogPage />} />
+          <Route path="admin" element={<AdminPage />} />
+          <Route path="alerts" element={<AlertsPage />} />
+          <Route path="discovery" element={<DiscoveryPage />} />
           <Route path="import-export" element={<ImportExportPage />} />
           <Route path="help" element={<HelpPage />} />
         </Route>

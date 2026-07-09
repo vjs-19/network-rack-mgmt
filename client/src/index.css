@@ -195,3 +195,42 @@ body {
     transform: translateY(0) scale(1);
   }
 }
+
+@media print {
+  body {
+    background: #ffffff;
+    color: #111827;
+  }
+
+  .app-header,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .muted-copy {
+    color: #475569;
+  }
+
+  .qr-print-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  .qr-sticker {
+    break-inside: avoid;
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+  }
+
+  .qr-sticker a {
+    display: none;
+  }
+}

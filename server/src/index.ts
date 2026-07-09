@@ -213,6 +213,16 @@ async function logAudit(req: express.Request, action: string, entity: string, en
   });
 }
 
+async function getQrBaseUrl(req: express.Request) {
+  const setting = await prisma.appSetting.findUnique({ where: { key: "qrBaseUrl" } });
+  if (setting?.value.trim()) {
+    return setting.value.trim().replace(/\/$/, "");
+  }
+  const forwardedHost = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost:5173";
+  const forwardedProto = req.get("x-forwarded-proto") ?? req.protocol;
+  return `${forwardedProto}://${forwardedHost}`;
+}
+
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
@@ -284,6 +294,159 @@ app.get("/api/master-data", requireAuth, async (_req, res) => {
 app.get("/api/audit-logs", requireAuth, async (_req, res) => {
   const logs = await prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 200 });
   res.json(logs);
+});
+
+app.get("/api/settings", requireAuth, async (_req, res) => {
+  const settings = await prisma.appSetting.findMany({ orderBy: { key: "asc" } });
+  res.json({
+    qrBaseUrl: settings.find((setting) => setting.key === "qrBaseUrl")?.value ?? "",
+    settings,
+  });
+});
+
+app.put("/api/settings/qr-base-url", requireAuth, requireAdmin, async (req, res) => {
+  const schema = z.object({ qrBaseUrl: z.string().trim().optional().default("") });
+  const { qrBaseUrl } = schema.parse(req.body);
+  const setting = await prisma.appSetting.upsert({
+    where: { key: "qrBaseUrl" },
+    update: { value: qrBaseUrl, notes: "Base URL encoded inside QR codes." },
+    create: { key: "qrBaseUrl", value: qrBaseUrl, notes: "Base URL encoded inside QR codes." },
+  });
+  await logAudit(req, "UPDATE", "Setting", setting.id, { key: "qrBaseUrl", value: qrBaseUrl });
+  res.json({ qrBaseUrl: setting.value });
+});
+
+app.get("/api/users", requireAuth, requireAdmin, async (_req, res) => {
+  const users = await prisma.user.findMany({
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true, email: true, role: true, createdAt: true },
+  });
+  res.json(users);
+});
+
+app.post("/api/users", requireAuth, requireAdmin, async (req, res) => {
+  const schema = z.object({
+    name: z.string().min(1),
+    email: z.string().email(),
+    password: z.string().min(6),
+    role: z.string().min(1).default("viewer"),
+  });
+  const data = schema.parse(req.body);
+  const user = await prisma.user.create({
+    data: {
+      name: data.name,
+      email: data.email,
+      passwordHash: bcrypt.hashSync(data.password, 10),
+      role: data.role,
+    },
+    select: { id: true, name: true, email: true, role: true, createdAt: true },
+  });
+  await logAudit(req, "CREATE", "User", user.id, { email: user.email, role: user.role });
+  res.status(201).json(user);
+});
+
+app.put("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
+  const schema = z.object({
+    name: z.string().min(1),
+    email: z.string().email(),
+    role: z.string().min(1),
+    password: z.string().min(6).optional().or(z.literal("")),
+  });
+  const data = schema.parse(req.body);
+  const user = await prisma.user.update({
+    where: { id: param(req.params.id) },
+    data: {
+      name: data.name,
+      email: data.email,
+      role: data.role,
+      ...(data.password ? { passwordHash: bcrypt.hashSync(data.password, 10) } : {}),
+    },
+    select: { id: true, name: true, email: true, role: true, createdAt: true },
+  });
+  await logAudit(req, "UPDATE", "User", user.id, { email: user.email, role: user.role });
+  res.json(user);
+});
+
+app.delete("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = param(req.params.id);
+  if (req.user?.id === id) {
+    return res.status(400).json({ message: "You cannot delete your own logged-in user." });
+  }
+  const user = await prisma.user.findUnique({ where: { id } });
+  await prisma.user.delete({ where: { id } });
+  await logAudit(req, "DELETE", "User", id, { email: user?.email });
+  res.status(204).send();
+});
+
+app.get("/api/alerts", requireAuth, async (_req, res) => {
+  const alerts = await prisma.alert.findMany({ orderBy: { createdAt: "desc" }, take: 200 });
+  res.json(alerts);
+});
+
+app.post("/api/alerts", requireAuth, requireAdmin, async (req, res) => {
+  const schema = z.object({
+    title: z.string().min(1),
+    severity: z.string().default("info"),
+    message: z.string().min(1),
+    entity: z.string().optional(),
+    entityId: z.string().optional(),
+  });
+  const alert = await prisma.alert.create({ data: schema.parse(req.body) });
+  await logAudit(req, "CREATE", "Alert", alert.id, { title: alert.title, severity: alert.severity });
+  res.status(201).json(alert);
+});
+
+app.put("/api/alerts/:id", requireAuth, requireAdmin, async (req, res) => {
+  const schema = z.object({ status: z.string().min(1) });
+  const alert = await prisma.alert.update({ where: { id: param(req.params.id) }, data: schema.parse(req.body) });
+  await logAudit(req, "UPDATE", "Alert", alert.id, { status: alert.status });
+  res.json(alert);
+});
+
+app.delete("/api/alerts/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = param(req.params.id);
+  const alert = await prisma.alert.findUnique({ where: { id } });
+  await prisma.alert.delete({ where: { id } });
+  await logAudit(req, "DELETE", "Alert", id, { title: alert?.title });
+  res.status(204).send();
+});
+
+app.get("/api/discovery/runs", requireAuth, async (_req, res) => {
+  const runs = await prisma.discoveryRun.findMany({ orderBy: { createdAt: "desc" }, take: 50 });
+  res.json(runs);
+});
+
+app.post("/api/discovery/run", requireAuth, requireAdmin, async (req, res) => {
+  const schema = z.object({ type: z.string().default("SNMP_LLDP_DUMMY"), target: z.string().optional() });
+  const data = schema.parse(req.body);
+  const details = {
+    target: data.target ?? "sample-switch",
+    portStatus: [
+      { port: "Gi1/0/1", status: "up", mac: "AA:BB:CC:00:00:01", lldpNeighbor: "Reception-PC" },
+      { port: "Gi1/0/2", status: "down", mac: null, lldpNeighbor: null },
+      { port: "SFP1", status: "up", mac: "AA:BB:CC:00:00:FE", lldpNeighbor: "Core-Switch" },
+    ],
+    note: "Placeholder only. Add real SNMP/LLDP polling here after switch credentials and network access are provided.",
+  };
+  const run = await prisma.discoveryRun.create({
+    data: {
+      type: data.type,
+      status: "completed",
+      summary: "Dummy SNMP/LLDP discovery completed with sample port data.",
+      details: JSON.stringify(details),
+    },
+  });
+  await prisma.alert.create({
+    data: {
+      title: "Discovery placeholder executed",
+      severity: "info",
+      message: "Dummy discovery run completed. Real SNMP/LLDP polling is not connected yet.",
+      entity: "DiscoveryRun",
+      entityId: run.id,
+    },
+  });
+  await logAudit(req, "CREATE", "DiscoveryRun", run.id, details);
+  res.status(201).json(run);
 });
 
 app.get("/api/qr-items", requireAuth, async (req, res) => {
@@ -921,9 +1084,7 @@ app.post("/api/import-export/import/:type", requireAuth, importUpload.single("fi
 });
 
 app.get("/api/qr/:type/:id", async (req, res) => {
-  const forwardedHost = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost:5173";
-  const forwardedProto = req.get("x-forwarded-proto") ?? req.protocol;
-  const frontendUrl = `${forwardedProto}://${forwardedHost}`;
+  const frontendUrl = await getQrBaseUrl(req);
   const type = param(req.params.type);
   const id = param(req.params.id);
   const path = type === "hub-room" ? `/hub-rooms/${id}` : type === "device" ? `/devices/${id}` : `/racks/${id}`;

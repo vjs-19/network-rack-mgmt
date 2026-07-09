@@ -1,4 +1,4 @@
-import { QrCode } from "lucide-react";
+import { Printer, QrCode, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -18,9 +18,11 @@ type QrItem = {
 export function QrCodesPage() {
   const [items, setItems] = useState<QrItem[]>([]);
   const [filter, setFilter] = useState("all");
+  const [qrBaseUrl, setQrBaseUrl] = useState("");
 
   useEffect(() => {
     apiFetch<QrItem[]>("/api/qr-items").then(setItems);
+    apiFetch<{ qrBaseUrl: string }>("/api/settings").then((settings) => setQrBaseUrl(settings.qrBaseUrl));
   }, []);
 
   const filtered = filter === "all" ? items : items.filter((item) => item.type === filter);
@@ -30,19 +32,26 @@ export function QrCodesPage() {
       <div>
         <h1 className="text-2xl font-black">QR Codes</h1>
         <p className="muted-copy text-sm">Print or save QR stickers for hub rooms, racks, and devices. Scanning opens the exact page in the mobile browser.</p>
+        <p className="muted-copy mt-1 text-xs">Encoded base URL: {qrBaseUrl || "Auto-detected from the current browser host"}</p>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="print:hidden flex flex-wrap gap-2">
         {["all", "hub-room", "rack", "device"].map((type) => (
           <Button key={type} variant={filter === type ? "primary" : "secondary"} onClick={() => setFilter(type)}>
             <QrCode size={16} /> {type}
           </Button>
         ))}
+        <Button variant="secondary" onClick={() => window.print()}>
+          <Printer size={16} /> Print Sheet
+        </Button>
+        <Link className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold" to="/admin">
+          <Settings size={16} /> QR Settings
+        </Link>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="qr-print-grid grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((item) => (
-          <Card key={`${item.type}-${item.id}`}>
+          <Card key={`${item.type}-${item.id}`} className="qr-sticker">
             <div className="flex items-start gap-4">
               <img src={item.qrUrl} alt={`${item.label} QR`} className="h-28 w-28 rounded-lg bg-white p-2" />
               <div className="min-w-0 flex-1">

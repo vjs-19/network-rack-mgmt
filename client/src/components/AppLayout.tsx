@@ -1,4 +1,4 @@
-import { Database, FileSpreadsheet, HelpCircle, LayoutDashboard, LogOut, Moon, QrCode, Search, ShieldCheck, Sun } from "lucide-react";
+import { Bell, Database, FileSpreadsheet, HelpCircle, LayoutDashboard, LogOut, Moon, QrCode, Radar, Search, Settings, ShieldCheck, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 
@@ -44,6 +44,15 @@ export function AppLayout() {
             </Link>
             <Link className="nav-link-soft hidden items-center gap-2 rounded-lg px-3 py-2 text-sm sm:flex" to="/audit-logs">
               <ShieldCheck size={16} /> Audit
+            </Link>
+            <Link className="nav-link-soft hidden items-center gap-2 rounded-lg px-3 py-2 text-sm sm:flex" to="/alerts">
+              <Bell size={16} /> Alerts
+            </Link>
+            <Link className="nav-link-soft hidden items-center gap-2 rounded-lg px-3 py-2 text-sm sm:flex" to="/discovery">
+              <Radar size={16} /> Discovery
+            </Link>
+            <Link className="nav-link-soft hidden items-center gap-2 rounded-lg px-3 py-2 text-sm sm:flex" to="/admin">
+              <Settings size={16} /> Admin
             </Link>
             <Link className="nav-link-soft hidden items-center gap-2 rounded-lg px-3 py-2 text-sm sm:flex" to="/import-export">
               <FileSpreadsheet size={16} /> Import

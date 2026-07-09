@@ -7,6 +7,10 @@ async function main() {
   await prisma.switchPort.deleteMany();
   await prisma.rackUnit.deleteMany();
   await prisma.device.deleteMany();
+  await prisma.alert.deleteMany();
+  await prisma.discoveryRun.deleteMany();
+  await prisma.auditLog.deleteMany();
+  await prisma.appSetting.deleteMany();
   await prisma.rack.deleteMany();
   await prisma.hubRoom.deleteMany();
   await prisma.floor.deleteMany();

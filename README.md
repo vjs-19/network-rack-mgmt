@@ -30,6 +30,11 @@ The app is built for desktop and mobile browsers so IT staff can update rack and
 - Master data page
 - Excel/CSV import and export
 - QR code page for hub rooms, racks, and devices
+- Printable QR sticker sheet layout
+- Fixed QR base URL setting for permanent office server links
+- User role management UI
+- Alerts and notifications starter module
+- SNMP/LLDP discovery placeholder module
 - Audit logs for create, update, delete, and port changes
 - Admin protection for destructive actions
 
@@ -249,6 +254,30 @@ Expected behavior:
 
 For office use, print the QR and stick it on the actual rack, switch, or hub room door.
 
+Use **Print Sheet** on the QR page to print clean white QR sticker cards.
+
+### Fixed QR Base URL
+
+Open:
+
+```text
+/admin
+```
+
+Set the QR base URL to the permanent office server address:
+
+```text
+http://SERVER-IP:5173
+```
+
+or:
+
+```text
+http://rackmanager.office.local:5173
+```
+
+After saving this value, all QR codes encode that fixed address instead of depending on the browser address used to open the app.
+
 ## Rack Device Rules
 
 When adding a rack device:
@@ -442,6 +471,64 @@ Audit logs record:
 - Connection clearing
 
 Delete and other destructive actions require an admin user.
+
+### User Role Management
+
+Open:
+
+```text
+/admin
+```
+
+Admins can:
+
+- Create users
+- Edit name, email, and role
+- Delete users
+- Set roles as `admin`, `editor`, or `viewer`
+
+Current backend enforcement protects admin-only destructive actions. More detailed per-role permissions can be expanded later.
+
+## Alerts
+
+Open:
+
+```text
+/alerts
+```
+
+The alerts module currently supports:
+
+- Manual alert creation
+- Severity: `info`, `warning`, `critical`
+- Open/resolved status
+- Delete alerts
+
+Future live monitoring can create alerts automatically from SNMP, ping, port status, or discovery checks.
+
+## Discovery Placeholder
+
+Open:
+
+```text
+/discovery
+```
+
+The discovery module currently runs dummy SNMP/LLDP sample data only. It creates:
+
+- Sample switch port status
+- Sample MAC table style data
+- Sample LLDP neighbor data
+- A related alert
+- An audit log record
+
+Real SNMP/LLDP discovery needs office switch details:
+
+- Switch management IPs
+- SNMP version
+- SNMP community or credentials
+- LLDP/CDP availability
+- Linux server network access to the switch management VLAN
 
 ## Development Without Docker
 

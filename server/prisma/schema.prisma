@@ -155,3 +155,33 @@ model AuditLog {
   details   String?
   createdAt DateTime @default(now())
 }
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  notes     String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model Alert {
+  id        String   @id @default(cuid())
+  title     String
+  severity  String   @default("info")
+  status    String   @default("open")
+  entity    String?
+  entityId  String?
+  message   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DiscoveryRun {
+  id        String   @id @default(cuid())
+  type      String
+  status    String   @default("completed")
+  summary   String
+  details   String?
+  createdAt DateTime @default(now())
+}
