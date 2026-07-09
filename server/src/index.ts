@@ -232,8 +232,12 @@ app.get("/api/dashboard", requireAuth, async (_req, res) => {
   const blockCards = await prisma.block.findMany({
     include: { floors: { include: { hubRooms: true } } },
   });
+  const buildingCards = await prisma.building.findMany({
+    orderBy: { createdAt: "asc" },
+    include: { blocks: { include: { floors: { include: { hubRooms: true } } } } },
+  });
 
-  res.json({ counts: { buildings, blocks, floors, hubRooms, racks, devices, ports }, blocks: blockCards });
+  res.json({ counts: { buildings, blocks, floors, hubRooms, racks, devices, ports }, blocks: blockCards, buildings: buildingCards });
 });
 
 app.get("/api/navigation", requireAuth, async (_req, res) => {
@@ -241,6 +245,17 @@ app.get("/api/navigation", requireAuth, async (_req, res) => {
     include: { blocks: { include: { floors: { orderBy: { level: "asc" }, include: { hubRooms: true } } } } },
   });
   res.json(buildings);
+});
+
+app.put("/api/buildings/:id", requireAuth, async (req, res) => {
+  const schema = z.object({ name: z.string().min(1) });
+  const building = await prisma.building.update({ where: { id: param(req.params.id) }, data: schema.parse(req.body) });
+  res.json(building);
+});
+
+app.delete("/api/buildings/:id", requireAuth, async (req, res) => {
+  await prisma.building.delete({ where: { id: param(req.params.id) } });
+  res.status(204).send();
 });
 
 app.post("/api/locations", requireAuth, async (req, res) => {

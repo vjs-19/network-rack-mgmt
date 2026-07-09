@@ -24,6 +24,11 @@ import { apiFetch } from "../lib/api";
 
 type DashboardData = {
   counts: Record<string, number>;
+  buildings: Array<{
+    id: string;
+    name: string;
+    blocks: Array<{ floors: Array<{ hubRooms: Array<{ id: string }> }> }>;
+  }>;
   blocks: Array<{
     id: string;
     name: string;
@@ -37,6 +42,8 @@ export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
   const [editRoom, setEditRoom] = useState({ name: "", type: "Hub Room", notes: "" });
+  const [editingBuildingId, setEditingBuildingId] = useState<string | null>(null);
+  const [editBuildingName, setEditBuildingName] = useState("");
   const [newLocation, setNewLocation] = useState({
     buildingName: "Main Building",
     blockName: "Block 1",
@@ -90,6 +97,24 @@ export function Dashboard() {
     if (!confirmed) return;
     await apiFetch(`/api/hub-rooms/${roomId}`, { method: "DELETE" });
     setMessage("Hub room deleted.");
+    loadDashboard();
+  }
+
+  async function saveBuilding(buildingId: string) {
+    await apiFetch(`/api/buildings/${buildingId}`, {
+      method: "PUT",
+      body: JSON.stringify({ name: editBuildingName })
+    });
+    setEditingBuildingId(null);
+    setMessage("Building updated.");
+    loadDashboard();
+  }
+
+  async function deleteBuilding(buildingId: string, buildingName: string) {
+    const confirmed = window.confirm(`Delete ${buildingName}? This removes all blocks, floors, hub rooms, racks, devices, and ports inside it.`);
+    if (!confirmed) return;
+    await apiFetch(`/api/buildings/${buildingId}`, { method: "DELETE" });
+    setMessage(`${buildingName} deleted.`);
     loadDashboard();
   }
 
@@ -287,6 +312,54 @@ export function Dashboard() {
         </div>
 
         <aside className="space-y-4">
+          <Card>
+            <h2 className="mb-4 text-lg font-black">Building Management</h2>
+            <div className="space-y-2">
+              {data.buildings.map((building) => {
+                const roomCount = building.blocks.reduce((sum, block) => sum + block.floors.reduce((floorSum, floor) => floorSum + floor.hubRooms.length, 0), 0);
+                return (
+                  <div key={building.id} className="rounded-xl bg-white/10 p-3">
+                    {editingBuildingId === building.id ? (
+                      <div className="space-y-2">
+                        <Input value={editBuildingName} onChange={(event) => setEditBuildingName(event.target.value)} />
+                        <div className="flex gap-2">
+                          <Button type="button" onClick={() => saveBuilding(building.id)}><Check size={16} /> Save</Button>
+                          <Button type="button" variant="secondary" onClick={() => setEditingBuildingId(null)}>Cancel</Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-bold">{building.name}</div>
+                          <div className="muted-copy text-xs">{building.blocks.length} block{building.blocks.length === 1 ? "" : "s"} / {roomCount} hub room{roomCount === 1 ? "" : "s"}</div>
+                        </div>
+                        <div className="flex shrink-0 gap-1">
+                          <button
+                            className="rounded-lg p-2 text-cyan-300 hover:bg-cyan-300/10"
+                            title="Rename building"
+                            onClick={() => {
+                              setEditingBuildingId(building.id);
+                              setEditBuildingName(building.name);
+                            }}
+                          >
+                            <Edit3 size={16} />
+                          </button>
+                          <button
+                            className="rounded-lg p-2 text-rose-300 hover:bg-rose-300/10"
+                            title="Delete building"
+                            onClick={() => deleteBuilding(building.id, building.name)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
           <Card>
             <h2 className="mb-4 text-lg font-black">Create Hub Room</h2>
             {message && <div className="mb-3 rounded-lg bg-emerald-300/10 p-2 text-sm text-emerald-200">{message}</div>}
