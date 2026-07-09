@@ -38,6 +38,10 @@ type DashboardData = {
 
 const connectedPorts = 45;
 
+function floorNameFromLevel(level: number) {
+  return `Floor Level ${Number.isFinite(level) ? level : 0}`;
+}
+
 export function Dashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
@@ -75,7 +79,10 @@ export function Dashboard() {
     setMessage("");
     await apiFetch("/api/locations", {
       method: "POST",
-      body: JSON.stringify(newLocation)
+      body: JSON.stringify({
+        ...newLocation,
+        floorName: floorNameFromLevel(newLocation.floorLevel)
+      })
     });
     setNewLocation((current) => ({ ...current, hubRoomName: "", hubRoomNotes: "" }));
     setMessage("Hub room created successfully.");
@@ -366,10 +373,7 @@ export function Dashboard() {
             <form className="space-y-2" onSubmit={createLocation}>
               <Input placeholder="Building Name" value={newLocation.buildingName} onChange={(event) => setNewLocation((current) => ({ ...current, buildingName: event.target.value }))} />
               <Input placeholder="Block Name" value={newLocation.blockName} onChange={(event) => setNewLocation((current) => ({ ...current, blockName: event.target.value }))} />
-              <div className="grid grid-cols-[1fr_90px] gap-2">
-                <Input placeholder="Floor Name" value={newLocation.floorName} onChange={(event) => setNewLocation((current) => ({ ...current, floorName: event.target.value }))} />
-                <Input type="number" value={newLocation.floorLevel} onChange={(event) => setNewLocation((current) => ({ ...current, floorLevel: Number(event.target.value) }))} />
-              </div>
+              <Input type="number" placeholder="Floor Level" value={newLocation.floorLevel} onChange={(event) => setNewLocation((current) => ({ ...current, floorLevel: Number(event.target.value) }))} />
               <Input required placeholder="Hub Room Name" value={newLocation.hubRoomName} onChange={(event) => setNewLocation((current) => ({ ...current, hubRoomName: event.target.value }))} />
               <Input placeholder="Hub Room Type" value={newLocation.hubRoomType} onChange={(event) => setNewLocation((current) => ({ ...current, hubRoomType: event.target.value }))} />
               <Textarea placeholder="Notes" value={newLocation.hubRoomNotes} onChange={(event) => setNewLocation((current) => ({ ...current, hubRoomNotes: event.target.value }))} />
