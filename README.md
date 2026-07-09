@@ -151,6 +151,70 @@ http://YOUR-WIFI-IP:5173
 
 Important: `127.0.0.1` works only on the same computer. A phone must use the laptop/PC Wi-Fi IP address.
 
+## Office Linux Server Deployment
+
+For real office use, the recommended setup is to install this application on the Linux CLI server that is connected to the office LAN.
+
+On the Linux server:
+
+```bash
+git clone https://github.com/vjs-19/network-rack-mgmt.git
+cd network-rack-mgmt
+docker compose up -d --build
+```
+
+If the database is new, initialize it:
+
+```bash
+docker compose exec server npx prisma db push
+docker compose exec server npm run seed
+```
+
+Find the Linux server IP address:
+
+```bash
+ip addr
+```
+
+Office users can then open the application from any LAN-connected desktop or laptop:
+
+```text
+http://SERVER-IP:5173
+```
+
+Example:
+
+```text
+http://10.10.1.25:5173
+```
+
+### QR Codes In Office Network
+
+For physical rack QR stickers, open the QR page using the Linux server IP address:
+
+```text
+http://SERVER-IP:5173/qr-codes
+```
+
+Then print the rack QR codes and stick each QR code on its matching physical rack.
+
+When scanned, the QR code should open:
+
+```text
+http://SERVER-IP:5173/racks/RACK_ID
+```
+
+Important: if the office network has no Wi-Fi, normal mobile phones cannot open the QR link unless they are connected to the same office network through an approved Wi-Fi, VPN, or managed device network. The QR code itself will still be correct, but the phone must have network access to the Linux server.
+
+Recommended office options:
+
+- Use office desktop/laptop browsers to access the rack pages.
+- Use an approved internal Wi-Fi or authorized tablet connected to the LAN.
+- Use VPN access if the IT policy allows mobile access to internal services.
+- Use a DNS name such as `http://rackmanager.office.local:5173` instead of a raw IP if your IT team can create it.
+
+For stable QR stickers, avoid printing QRs with temporary addresses like `127.0.0.1` or a laptop IP. Use the permanent Linux server IP address or office DNS name.
+
 ## Application Workflow
 
 ```text
