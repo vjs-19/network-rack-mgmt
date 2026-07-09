@@ -1,79 +1,257 @@
 # Network Rack Management System
 
-A Phase 1 prototype for digitally managing hub rooms, racks, network switches, and switch ports.
+A responsive web application for managing office hub rooms, rack layouts, network switches, power supplies, cable managers, switch ports, QR stickers, cable trace data, and audit history.
 
-## Stack
+The app is built for desktop and mobile browsers so IT staff can update rack and port information directly from a phone after scanning a QR sticker.
 
-- React + Vite + TypeScript
-- Tailwind CSS with shadcn-style reusable UI components
-- Node.js + Express.js
-- PostgreSQL + Prisma
-- JWT login
-- REST APIs
+## Current Stack
 
-## Phase 1 Dummy Data
+- Frontend: React, Vite, TypeScript, Tailwind CSS
+- UI: reusable shadcn-style components, Lucide icons, light/dark mode
+- Backend: Node.js, Express.js
+- Database: PostgreSQL
+- ORM: Prisma
+- Authentication: JWT login
+- Runtime: Docker Compose
 
-The seed creates:
+## Main Features
 
-- 1 building
-- 1 block
-- 1 floor
-- 1 hub room
-- 3 racks
-- 3 switches per rack
-- 10 ports per switch
-- first 5 ports connected to sample devices
-- last 5 ports empty
+- Dashboard with building, block, floor, and hub room navigation
+- Editable infrastructure map
+- Hub room graphical layout
+- Rack view with 42U/45U style unit placement
+- Add, rename, delete racks
+- Add switches, cable managers, and power supply modules
+- 1U and 2U device placement with automatic rack unit occupation
+- Switch front panel with configurable RJ45 and SFP ports
+- Editable port connection details
+- Power supply socket view
+- Cable trace search
+- Master data page
+- Excel/CSV import and export
+- QR code page for hub rooms, racks, and devices
+- Audit logs for create, update, delete, and port changes
+- Admin protection for destructive actions
 
-## Local Setup
-
-```powershell
-npm install
-copy server\.env.example server\.env
-npm run prisma:generate
-npm run seed
-npm run dev
-```
-
-Open:
+## Default Login
 
 ```text
-http://localhost:5173
+Email: admin@example.com
+Password: admin123
 ```
 
-Login:
-
-```text
-admin@example.com
-admin123
-```
+Change these before using the application in a real office.
 
 ## Docker Setup
 
+From the project folder:
+
 ```powershell
-docker compose up --build
+cd "C:\Vijay's Projects\Ethernrt port AR Scanning"
+docker compose up -d --build
 ```
 
-Then seed the database:
+Open the application:
+
+```text
+http://127.0.0.1:5173
+```
+
+Backend API:
+
+```text
+http://127.0.0.1:4000
+```
+
+PostgreSQL:
+
+```text
+Host: 127.0.0.1
+Port: 5432
+Database: rack_manager
+User: rackadmin
+Password: rackpassword
+```
+
+## First-Time Database Setup
+
+If the database is new or empty, run:
 
 ```powershell
 docker compose exec server npx prisma db push
 docker compose exec server npm run seed
 ```
 
+Then log in with the default admin account.
+
+## Useful Docker Commands
+
+Start or rebuild:
+
+```powershell
+docker compose up -d --build
+```
+
+Stop:
+
+```powershell
+docker compose down
+```
+
+View containers:
+
+```powershell
+docker compose ps
+```
+
+View server logs:
+
+```powershell
+docker compose logs -f server
+```
+
+## Mobile Phone Testing
+
+Your current Windows Wi-Fi IP address is:
+
+```text
+192.168.29.134
+```
+
+To test from your mobile phone:
+
+1. Keep Docker running on the laptop/PC.
+2. Connect the mobile phone to the same Wi-Fi network as the laptop/PC.
+3. Open this URL on the phone browser:
+
+```text
+http://192.168.29.134:5173
+```
+
+4. Log in with:
+
+```text
+admin@example.com
+admin123
+```
+
+5. Open the QR page from the top navigation.
+6. Scan or open a QR code. It should open the matching hub room, rack, or device page.
+
+If the phone cannot open the site:
+
+- Check that the phone and laptop are on the same Wi-Fi.
+- Check Windows Firewall and allow Docker/Desktop or port `5173`.
+- Run `ipconfig` again and confirm the Wi-Fi IPv4 address has not changed.
+- Use the new IP address in this format:
+
+```text
+http://YOUR-WIFI-IP:5173
+```
+
+Important: `127.0.0.1` works only on the same computer. A phone must use the laptop/PC Wi-Fi IP address.
+
+## Application Workflow
+
+```text
+Dashboard
+-> Building / Block
+-> Hub Room
+-> Rack Layout
+-> Rack
+-> Device
+-> Switch Ports / Power Sockets
+```
+
+## QR Code Workflow
+
 Open:
 
 ```text
-http://localhost:5173
+/qr-codes
 ```
 
-## Main Workflow
+QR codes are generated for:
 
-Dashboard -> Blocks -> Floors -> Hub Room -> Rack Layout -> Rack -> Network Switch -> Switch Ports
+- Hub Rooms
+- Racks
+- Devices
+
+Expected behavior:
+
+- Hub Room QR opens the selected hub room layout.
+- Rack QR opens the selected rack view.
+- Device QR opens the selected device or switch details.
+
+For office use, print the QR and stick it on the actual rack, switch, or hub room door.
+
+## Rack Device Rules
+
+When adding a rack device:
+
+- Select device type.
+- Select top U position.
+- Select height as 1U or 2U.
+
+For example:
+
+```text
+Power Supply 2U at U45
+```
+
+The app automatically occupies:
+
+```text
+U45 and U44
+```
+
+This same rule applies to switches, patch panels, cable managers, and power supply modules.
+
+## Switch Port Configuration
+
+When adding a switch, enter:
+
+- Copper RJ45 port count
+- Fiber SFP port count
+
+Examples:
+
+```text
+48 RJ45 + 4 SFP
+24 SFP + 4 RJ45
+24 RJ45 + 2 SFP
+```
+
+The application creates the correct switch front panel from the entered counts.
+
+## Cable Trace
+
+Open:
+
+```text
+/trace
+```
+
+You can search by:
+
+- Device name
+- MAC address
+- IP address
+- Cable label
+- Patch panel
+- VLAN
+- Switch name
+- Switch port
+
+The result shows the connection path and device/port details.
 
 ## Excel Import / Export
 
-Open **Import** in the top navigation.
+Open:
+
+```text
+/import-export
+```
 
 Recommended import order:
 
@@ -93,6 +271,8 @@ hubRoomName
 hubRoomType
 hubRoomNotes
 ```
+
+Note: The dashboard no longer requires typing a floor name when creating hub rooms manually. For import, `floorLevel` is the important value.
 
 ### Racks Columns
 
@@ -126,7 +306,23 @@ installationDate
 location
 startUnit
 heightUnits
+copperPortCount
+sfpPortCount
 notes
+```
+
+Useful `deviceType` values:
+
+```text
+SWITCH
+PATCH_PANEL
+CABLE_MANAGER
+POWER_SUPPLY
+SERVER
+FIREWALL
+ROUTER
+UPS
+OTHER
 ```
 
 ### Switch Ports Columns
@@ -148,6 +344,14 @@ description
 notes
 ```
 
+Useful `portType` values:
+
+```text
+RJ45
+SFP
+POWER_SOCKET
+```
+
 Allowed `status` values:
 
 ```text
@@ -157,9 +361,70 @@ DISABLED
 UNKNOWN
 ```
 
-QR URLs are supported for hub rooms and racks:
+## Admin And Audit
 
-- `/hub-rooms/:id`
-- `/racks/:id`
+Open:
 
-Scanning those URLs from a mobile browser opens the correct page.
+```text
+/audit-logs
+```
+
+Audit logs record:
+
+- Create actions
+- Update actions
+- Delete actions
+- Port edits
+- Connection clearing
+
+Delete and other destructive actions require an admin user.
+
+## Development Without Docker
+
+Install dependencies:
+
+```powershell
+npm install
+```
+
+Generate Prisma client:
+
+```powershell
+npm run prisma:generate
+```
+
+Run development servers:
+
+```powershell
+npm run dev
+```
+
+Frontend:
+
+```text
+http://127.0.0.1:5173
+```
+
+Backend:
+
+```text
+http://127.0.0.1:4000
+```
+
+Docker is recommended for normal testing because it starts PostgreSQL, backend, and frontend together.
+
+## Future Upgrade Ideas
+
+The database and code are prepared for future modules such as:
+
+- SNMP discovery
+- LLDP/CDP neighbor discovery
+- Live switch port status
+- Ping online/offline checks
+- Alerts and notifications
+- More detailed audit reports
+- User roles and permissions
+- Real rack drawing calibration
+- Printable QR sticker sheets
+
+These are not required for the current prototype.
