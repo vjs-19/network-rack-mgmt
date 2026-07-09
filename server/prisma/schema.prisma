@@ -1,0 +1,157 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RackUnitType {
+  SWITCH
+  PATCH_PANEL
+  CABLE_MANAGER
+  POWER_SUPPLY
+  BLANK
+  OTHER
+}
+
+enum PortStatus {
+  CONNECTED
+  DISCONNECTED
+  DISABLED
+  UNKNOWN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         String   @default("admin")
+  createdAt    DateTime @default(now())
+}
+
+model Building {
+  id        String   @id @default(cuid())
+  name      String
+  blocks    Block[]
+  createdAt DateTime @default(now())
+}
+
+model Block {
+  id         String   @id @default(cuid())
+  name       String
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  floors     Floor[]
+}
+
+model Floor {
+  id       String    @id @default(cuid())
+  name     String
+  level    Int
+  blockId  String
+  block    Block     @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  hubRooms HubRoom[]
+}
+
+model HubRoom {
+  id          String   @id @default(cuid())
+  name        String
+  type        String   @default("Hub Room")
+  floorId     String
+  floor       Floor    @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  layoutImage String?
+  notes       String?
+  racks       Rack[]
+  createdAt   DateTime @default(now())
+}
+
+model Rack {
+  id           String     @id @default(cuid())
+  name         String
+  unitCount    Int        @default(42)
+  positionX    Int        @default(0)
+  positionY    Int        @default(0)
+  layoutImage  String?
+  notes        String?
+  hubRoomId    String
+  hubRoom      HubRoom    @relation(fields: [hubRoomId], references: [id], onDelete: Cascade)
+  rackUnits    RackUnit[]
+  devices      Device[]
+}
+
+model RackUnit {
+  id          String       @id @default(cuid())
+  rackId      String
+  rack        Rack         @relation(fields: [rackId], references: [id], onDelete: Cascade)
+  unitNumber  Int
+  label       String
+  type        RackUnitType
+  heightUnits Int          @default(1)
+  deviceId    String?
+  device      Device?      @relation(fields: [deviceId], references: [id])
+}
+
+model Device {
+  id               String     @id @default(cuid())
+  name             String
+  deviceType       String
+  brand            String?
+  model            String?
+  ipAddress        String?
+  macAddress       String?
+  firmwareVersion  String?
+  softwareVersion  String?
+  serialNumber     String?
+  installationDate DateTime?
+  location         String?
+  imageUrl         String?
+  notes            String?
+  rackId           String
+  rack             Rack       @relation(fields: [rackId], references: [id], onDelete: Cascade)
+  startUnit        Int
+  heightUnits      Int        @default(1)
+  ports            SwitchPort[]
+  rackUnits        RackUnit[]
+}
+
+model SwitchPort {
+  id                  String     @id @default(cuid())
+  deviceId            String
+  device              Device     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  portNumber          Int
+  portLabel           String
+  portType            String     @default("RJ45")
+  status              PortStatus @default(UNKNOWN)
+  connectedDeviceName String?
+  macAddress          String?
+  cableLabel          String?
+  patchPanel          String?
+  vlan                String?
+  speed               String?
+  duplex              String?
+  description         String?
+  notes               String?
+}
+
+model UploadedFile {
+  id           String   @id @default(cuid())
+  fileName     String
+  originalName String
+  mimeType     String
+  size         Int
+  path         String
+  purpose      String
+  createdAt    DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  entity    String
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+}

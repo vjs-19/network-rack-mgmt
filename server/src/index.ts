@@ -1,0 +1,701 @@
+import "dotenv/config";
+import bcrypt from "bcryptjs";
+import cors from "cors";
+import express from "express";
+import multer from "multer";
+import QRCode from "qrcode";
+import XLSX from "xlsx";
+import { z } from "zod";
+
+import { requireAuth, signToken } from "./auth.js";
+import { prisma } from "./prisma.js";
+
+const app = express();
+const port = Number(process.env.PORT ?? 4000);
+const upload = multer({ dest: "uploads/" });
+
+const importUpload = multer({ storage: multer.memoryStorage() });
+
+function param(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value ?? "";
+}
+
+const templateColumns = {
+  locations: [
+    "buildingName",
+    "blockName",
+    "floorName",
+    "floorLevel",
+    "hubRoomName",
+    "hubRoomType",
+    "hubRoomNotes"
+  ],
+  racks: [
+    "buildingName",
+    "blockName",
+    "floorName",
+    "hubRoomName",
+    "rackName",
+    "unitCount",
+    "positionX",
+    "positionY",
+    "notes"
+  ],
+  devices: [
+    "hubRoomName",
+    "rackName",
+    "deviceName",
+    "deviceType",
+    "brand",
+    "model",
+    "ipAddress",
+    "macAddress",
+    "firmwareVersion",
+    "softwareVersion",
+    "serialNumber",
+    "installationDate",
+    "location",
+    "startUnit",
+    "heightUnits",
+    "notes"
+  ],
+  ports: [
+    "switchName",
+    "portNumber",
+    "portLabel",
+    "portType",
+    "status",
+    "connectedDeviceName",
+    "macAddress",
+    "cableLabel",
+    "patchPanel",
+    "vlan",
+    "speed",
+    "duplex",
+    "description",
+    "notes"
+  ]
+} as const;
+
+type ImportType = keyof typeof templateColumns;
+
+function cell(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  return value === undefined || value === null ? "" : String(value).trim();
+}
+
+function numberCell(row: Record<string, unknown>, key: string, fallback = 0) {
+  const value = Number(row[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function workbookResponse(res: express.Response, fileName: string, rows: Record<string, unknown>[]) {
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+  const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.send(buffer);
+}
+
+function readWorkbookRows(file: Express.Multer.File) {
+  const workbook = XLSX.read(file.buffer, { type: "buffer", cellDates: true });
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) return [];
+  return XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[sheetName], { defval: "" });
+}
+
+async function findOrCreateBuilding(name: string) {
+  const existing = await prisma.building.findFirst({ where: { name } });
+  return existing ?? prisma.building.create({ data: { name } });
+}
+
+async function findOrCreateBlock(name: string, buildingId: string) {
+  const existing = await prisma.block.findFirst({ where: { name, buildingId } });
+  return existing ?? prisma.block.create({ data: { name, buildingId } });
+}
+
+async function findOrCreateFloor(name: string, blockId: string, level: number) {
+  const existing = await prisma.floor.findFirst({ where: { name, blockId } });
+  return existing ?? prisma.floor.create({ data: { name, blockId, level } });
+}
+
+async function findOrCreateHubRoom(name: string, floorId: string, type = "Hub Room", notes?: string) {
+  const existing = await prisma.hubRoom.findFirst({ where: { name, floorId } });
+  if (existing) {
+    return prisma.hubRoom.update({ where: { id: existing.id }, data: { type, notes } });
+  }
+  return prisma.hubRoom.create({ data: { name, floorId, type, notes } });
+}
+
+async function findOrCreateRack(name: string, hubRoomId: string, unitCount = 42, positionX = 0, positionY = 0, notes?: string) {
+  const existing = await prisma.rack.findFirst({ where: { name, hubRoomId } });
+  const rack = existing
+    ? await prisma.rack.update({ where: { id: existing.id }, data: { unitCount, positionX, positionY, notes } })
+    : await prisma.rack.create({ data: { name, hubRoomId, unitCount, positionX, positionY, notes } });
+
+  const currentUnits = await prisma.rackUnit.count({ where: { rackId: rack.id } });
+  if (currentUnits === 0) {
+    for (let unit = 1; unit <= rack.unitCount; unit += 1) {
+      await prisma.rackUnit.create({ data: { rackId: rack.id, unitNumber: unit, label: `U${unit}`, type: "BLANK" } });
+    }
+  }
+
+  return rack;
+}
+
+function rackUnitTypeForDevice(deviceType: string) {
+  const type = deviceType.toLowerCase();
+  if (type.includes("switch")) return "SWITCH";
+  if (type.includes("cable manager")) return "CABLE_MANAGER";
+  if (type.includes("power supply")) return "POWER_SUPPLY";
+  if (type.includes("patch panel")) return "PATCH_PANEL";
+  return "OTHER";
+}
+
+async function ensureRackUnits(rackId: string, unitCount: number) {
+  const existingUnits = await prisma.rackUnit.findMany({ where: { rackId }, select: { unitNumber: true } });
+  const existingNumbers = new Set(existingUnits.map((unit) => unit.unitNumber));
+
+  for (let unit = 1; unit <= unitCount; unit += 1) {
+    if (!existingNumbers.has(unit)) {
+      await prisma.rackUnit.create({ data: { rackId, unitNumber: unit, label: `U${unit}`, type: "BLANK" } });
+    }
+  }
+}
+
+async function syncDeviceToRackUnits(device: { id: string; rackId: string; name: string; deviceType: string; startUnit: number; heightUnits: number }) {
+  const heightUnits = Math.max(Number(device.heightUnits) || 1, 1);
+  const startUnit = Number(device.startUnit);
+  const endUnit = startUnit + heightUnits - 1;
+
+  await clearDeviceFromRackUnits(device.id);
+
+  await prisma.rackUnit.updateMany({
+    where: { rackId: device.rackId, unitNumber: { gte: startUnit, lte: endUnit } },
+    data: {
+      type: rackUnitTypeForDevice(device.deviceType),
+      label: heightUnits > 1 ? `${device.name} (${heightUnits}U)` : device.name,
+      heightUnits,
+      deviceId: device.id
+    }
+  });
+}
+
+async function clearDeviceFromRackUnits(deviceId: string) {
+  const units = await prisma.rackUnit.findMany({ where: { deviceId } });
+  for (const unit of units) {
+    await prisma.rackUnit.update({
+      where: { id: unit.id },
+      data: { type: "BLANK", label: `U${unit.unitNumber}`, heightUnits: 1, deviceId: null }
+    });
+  }
+}
+
+app.use(cors());
+app.use(express.json());
+app.use("/uploads", express.static("uploads"));
+
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true });
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  const schema = z.object({ email: z.string().email(), password: z.string().min(1) });
+  const parsed = schema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({ message: "Invalid login data" });
+  }
+
+  const user = await prisma.user.findUnique({ where: { email: parsed.data.email } });
+  if (!user || !bcrypt.compareSync(parsed.data.password, user.passwordHash)) {
+    return res.status(401).json({ message: "Invalid email or password" });
+  }
+
+  const token = signToken({ id: user.id, email: user.email, role: user.role });
+  return res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+});
+
+app.get("/api/dashboard", requireAuth, async (_req, res) => {
+  const [buildings, blocks, floors, hubRooms, racks, devices, ports] = await Promise.all([
+    prisma.building.count(),
+    prisma.block.count(),
+    prisma.floor.count(),
+    prisma.hubRoom.count(),
+    prisma.rack.count(),
+    prisma.device.count(),
+    prisma.switchPort.count(),
+  ]);
+
+  const blockCards = await prisma.block.findMany({
+    include: { floors: { include: { hubRooms: true } } },
+  });
+
+  res.json({ counts: { buildings, blocks, floors, hubRooms, racks, devices, ports }, blocks: blockCards });
+});
+
+app.get("/api/navigation", requireAuth, async (_req, res) => {
+  const buildings = await prisma.building.findMany({
+    include: { blocks: { include: { floors: { orderBy: { level: "asc" }, include: { hubRooms: true } } } } },
+  });
+  res.json(buildings);
+});
+
+app.post("/api/locations", requireAuth, async (req, res) => {
+  const schema = z.object({
+    buildingName: z.string().min(1),
+    blockName: z.string().min(1),
+    floorName: z.string().min(1),
+    floorLevel: z.number().default(0),
+    hubRoomName: z.string().min(1),
+    hubRoomType: z.string().default("Hub Room"),
+    hubRoomNotes: z.string().optional()
+  });
+  const data = schema.parse(req.body);
+  const building = await findOrCreateBuilding(data.buildingName);
+  const block = await findOrCreateBlock(data.blockName, building.id);
+  const floor = await findOrCreateFloor(data.floorName, block.id, data.floorLevel);
+  const hubRoom = await findOrCreateHubRoom(data.hubRoomName, floor.id, data.hubRoomType, data.hubRoomNotes);
+  res.status(201).json({ building, block, floor, hubRoom });
+});
+
+app.get("/api/blocks/:id", requireAuth, async (req, res) => {
+  const block = await prisma.block.findUnique({
+    where: { id: param(req.params.id) },
+    include: { building: true, floors: { orderBy: { level: "asc" }, include: { hubRooms: true } } },
+  });
+  if (!block) return res.status(404).json({ message: "Block not found" });
+  res.json(block);
+});
+
+app.get("/api/hub-rooms/:id", requireAuth, async (req, res) => {
+  const hubRoom = await prisma.hubRoom.findUnique({
+    where: { id: param(req.params.id) },
+    include: {
+      floor: { include: { block: { include: { building: true } } } },
+      racks: { orderBy: [{ positionY: "asc" }, { positionX: "asc" }], include: { devices: true } },
+    },
+  });
+  if (!hubRoom) return res.status(404).json({ message: "Hub room not found" });
+  res.json(hubRoom);
+});
+
+app.post("/api/hub-rooms", requireAuth, async (req, res) => {
+  const schema = z.object({ name: z.string(), floorId: z.string(), type: z.string().optional(), notes: z.string().optional() });
+  const hubRoom = await prisma.hubRoom.create({ data: schema.parse(req.body) });
+  res.status(201).json(hubRoom);
+});
+
+app.put("/api/hub-rooms/:id", requireAuth, async (req, res) => {
+  const hubRoom = await prisma.hubRoom.update({ where: { id: param(req.params.id) }, data: req.body });
+  res.json(hubRoom);
+});
+
+app.delete("/api/hub-rooms/:id", requireAuth, async (req, res) => {
+  await prisma.hubRoom.delete({ where: { id: param(req.params.id) } });
+  res.status(204).send();
+});
+
+app.get("/api/racks/:id", requireAuth, async (req, res) => {
+  const rackRecord = await prisma.rack.findUnique({
+    where: { id: param(req.params.id) },
+    include: { devices: true },
+  });
+  if (!rackRecord) return res.status(404).json({ message: "Rack not found" });
+
+  await ensureRackUnits(rackRecord.id, rackRecord.unitCount);
+  for (const device of rackRecord.devices) {
+    await syncDeviceToRackUnits(device);
+  }
+
+  const rack = await prisma.rack.findUnique({
+    where: { id: param(req.params.id) },
+    include: {
+      hubRoom: { include: { floor: { include: { block: true } } } },
+      rackUnits: { orderBy: { unitNumber: "desc" }, include: { device: true } },
+      devices: { orderBy: { startUnit: "desc" }, include: { ports: { orderBy: { portNumber: "asc" } } } },
+    },
+  });
+  res.json(rack);
+});
+
+app.post("/api/racks", requireAuth, async (req, res) => {
+  const schema = z.object({
+    name: z.string(),
+    hubRoomId: z.string(),
+    unitCount: z.number().default(42),
+    positionX: z.number().default(0),
+    positionY: z.number().default(0),
+    notes: z.string().optional(),
+  });
+  const rack = await prisma.rack.create({ data: schema.parse(req.body) });
+  await ensureRackUnits(rack.id, rack.unitCount);
+  res.status(201).json(rack);
+});
+
+app.put("/api/racks/:id", requireAuth, async (req, res) => {
+  const rack = await prisma.rack.update({ where: { id: param(req.params.id) }, data: req.body });
+  res.json(rack);
+});
+
+app.delete("/api/racks/:id", requireAuth, async (req, res) => {
+  await prisma.rack.delete({ where: { id: param(req.params.id) } });
+  res.status(204).send();
+});
+
+app.get("/api/devices/:id", requireAuth, async (req, res) => {
+  const device = await prisma.device.findUnique({
+    where: { id: param(req.params.id) },
+    include: { rack: true, ports: { orderBy: { portNumber: "asc" } } },
+  });
+  if (!device) return res.status(404).json({ message: "Device not found" });
+  res.json(device);
+});
+
+app.post("/api/devices", requireAuth, async (req, res) => {
+  const { portCount, socketCount, ...deviceInput } = req.body;
+  const device = await prisma.device.create({ data: deviceInput });
+
+  if (device.deviceType.toLowerCase().includes("switch")) {
+    const count = Number(portCount) > 0 ? Number(portCount) : 10;
+    for (let portNumber = 1; portNumber <= count; portNumber += 1) {
+      await prisma.switchPort.create({
+        data: {
+          deviceId: device.id,
+          portNumber,
+          portLabel: `Port ${portNumber}`,
+          portType: "RJ45",
+          status: "DISCONNECTED"
+        }
+      });
+    }
+  }
+
+  if (device.deviceType.toLowerCase().includes("power supply")) {
+    const count = Number(socketCount) > 0 ? Number(socketCount) : 8;
+    for (let socketNumber = 1; socketNumber <= count; socketNumber += 1) {
+      await prisma.switchPort.create({
+        data: {
+          deviceId: device.id,
+          portNumber: socketNumber,
+          portLabel: `Socket ${socketNumber}`,
+          portType: "POWER_SOCKET",
+          status: "DISCONNECTED"
+        }
+      });
+    }
+  }
+
+  await syncDeviceToRackUnits(device);
+
+  res.status(201).json(device);
+});
+
+app.put("/api/devices/:id", requireAuth, async (req, res) => {
+  const device = await prisma.device.update({ where: { id: param(req.params.id) }, data: req.body });
+  await syncDeviceToRackUnits(device);
+  res.json(device);
+});
+
+app.delete("/api/devices/:id", requireAuth, async (req, res) => {
+  await clearDeviceFromRackUnits(param(req.params.id));
+  await prisma.device.delete({ where: { id: param(req.params.id) } });
+  res.status(204).send();
+});
+
+app.put("/api/ports/:id", requireAuth, async (req, res) => {
+  const portRow = await prisma.switchPort.update({ where: { id: param(req.params.id) }, data: req.body });
+  res.json(portRow);
+});
+
+app.delete("/api/ports/:id/connection", requireAuth, async (req, res) => {
+  const portRow = await prisma.switchPort.update({
+    where: { id: param(req.params.id) },
+    data: {
+      status: "DISCONNECTED",
+      connectedDeviceName: null,
+      macAddress: null,
+      cableLabel: null,
+      description: null,
+      notes: null,
+    },
+  });
+  res.json(portRow);
+});
+
+app.post("/api/uploads", requireAuth, upload.single("file"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+  const file = await prisma.uploadedFile.create({
+    data: {
+      fileName: req.file.filename,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      path: `/uploads/${req.file.filename}`,
+      purpose: req.body.purpose ?? "general",
+    },
+  });
+  res.status(201).json(file);
+});
+
+app.get("/api/import-export/templates/:type", requireAuth, async (req, res) => {
+  const type = param(req.params.type) as ImportType;
+  if (!(type in templateColumns)) return res.status(404).json({ message: "Unknown template type" });
+
+  const sampleRows: Record<ImportType, Record<string, unknown>[]> = {
+    locations: [
+      {
+        buildingName: "Main Building",
+        blockName: "Block 1",
+        floorName: "First Floor",
+        floorLevel: 1,
+        hubRoomName: "First Floor Hub Room",
+        hubRoomType: "Hub Room",
+        hubRoomNotes: "Main network room"
+      }
+    ],
+    racks: [
+      {
+        buildingName: "Main Building",
+        blockName: "Block 1",
+        floorName: "First Floor",
+        hubRoomName: "First Floor Hub Room",
+        rackName: "Rack A",
+        unitCount: 45,
+        positionX: 80,
+        positionY: 120,
+        notes: "Network rack near entrance"
+      }
+    ],
+    devices: [
+      {
+        hubRoomName: "First Floor Hub Room",
+        rackName: "Rack A",
+        deviceName: "SW-RackA-1",
+        deviceType: "Network Switch",
+        brand: "Cisco",
+        model: "48-Port PoE",
+        ipAddress: "10.10.1.10",
+        macAddress: "00:11:22:33:44:55",
+        firmwareVersion: "1.0.0",
+        softwareVersion: "NX-Phase1",
+        serialNumber: "SN001",
+        installationDate: "2026-01-15",
+        location: "First Floor Hub Room / Rack A",
+        startUnit: 42,
+        heightUnits: 1,
+        notes: "Access switch"
+      }
+    ],
+    ports: [
+      {
+        switchName: "SW-RackA-1",
+        portNumber: 1,
+        portLabel: "Port 1",
+        portType: "RJ45",
+        status: "CONNECTED",
+        connectedDeviceName: "Reception PC",
+        macAddress: "00:11:22:33:44:55",
+        cableLabel: "PP-A-12",
+        patchPanel: "Patch Panel A",
+        vlan: "VLAN-10",
+        speed: "1G",
+        duplex: "Full",
+        description: "Reception desk network point",
+        notes: "Sample connected port"
+      }
+    ]
+  };
+
+  workbookResponse(res, `${type}-template.xlsx`, sampleRows[type]);
+});
+
+app.get("/api/import-export/export/:type", requireAuth, async (req, res) => {
+  const type = param(req.params.type) as ImportType;
+  if (!(type in templateColumns)) return res.status(404).json({ message: "Unknown export type" });
+
+  if (type === "locations") {
+    const rooms = await prisma.hubRoom.findMany({ include: { floor: { include: { block: { include: { building: true } } } } } });
+    return workbookResponse(
+      res,
+      "locations-export.xlsx",
+      rooms.map((room) => ({
+        buildingName: room.floor.block.building.name,
+        blockName: room.floor.block.name,
+        floorName: room.floor.name,
+        floorLevel: room.floor.level,
+        hubRoomName: room.name,
+        hubRoomType: room.type,
+        hubRoomNotes: room.notes ?? ""
+      }))
+    );
+  }
+
+  if (type === "racks") {
+    const racks = await prisma.rack.findMany({ include: { hubRoom: { include: { floor: { include: { block: { include: { building: true } } } } } } } });
+    return workbookResponse(
+      res,
+      "racks-export.xlsx",
+      racks.map((rack) => ({
+        buildingName: rack.hubRoom.floor.block.building.name,
+        blockName: rack.hubRoom.floor.block.name,
+        floorName: rack.hubRoom.floor.name,
+        hubRoomName: rack.hubRoom.name,
+        rackName: rack.name,
+        unitCount: rack.unitCount,
+        positionX: rack.positionX,
+        positionY: rack.positionY,
+        notes: rack.notes ?? ""
+      }))
+    );
+  }
+
+  if (type === "devices") {
+    const devices = await prisma.device.findMany({ include: { rack: { include: { hubRoom: true } } } });
+    return workbookResponse(
+      res,
+      "devices-export.xlsx",
+      devices.map((device) => ({
+        hubRoomName: device.rack.hubRoom.name,
+        rackName: device.rack.name,
+        deviceName: device.name,
+        deviceType: device.deviceType,
+        brand: device.brand ?? "",
+        model: device.model ?? "",
+        ipAddress: device.ipAddress ?? "",
+        macAddress: device.macAddress ?? "",
+        firmwareVersion: device.firmwareVersion ?? "",
+        softwareVersion: device.softwareVersion ?? "",
+        serialNumber: device.serialNumber ?? "",
+        installationDate: device.installationDate?.toISOString().slice(0, 10) ?? "",
+        location: device.location ?? "",
+        startUnit: device.startUnit,
+        heightUnits: device.heightUnits,
+        notes: device.notes ?? ""
+      }))
+    );
+  }
+
+  const ports = await prisma.switchPort.findMany({ include: { device: true }, orderBy: [{ deviceId: "asc" }, { portNumber: "asc" }] });
+  return workbookResponse(
+    res,
+    "ports-export.xlsx",
+    ports.map((portRow) => ({
+      switchName: portRow.device.name,
+      portNumber: portRow.portNumber,
+      portLabel: portRow.portLabel,
+      portType: portRow.portType,
+      status: portRow.status,
+      connectedDeviceName: portRow.connectedDeviceName ?? "",
+      macAddress: portRow.macAddress ?? "",
+      cableLabel: portRow.cableLabel ?? "",
+      patchPanel: portRow.patchPanel ?? "",
+      vlan: portRow.vlan ?? "",
+      speed: portRow.speed ?? "",
+      duplex: portRow.duplex ?? "",
+      description: portRow.description ?? "",
+      notes: portRow.notes ?? ""
+    }))
+  );
+});
+
+app.post("/api/import-export/import/:type", requireAuth, importUpload.single("file"), async (req, res) => {
+  const type = param(req.params.type) as ImportType;
+  if (!(type in templateColumns)) return res.status(404).json({ message: "Unknown import type" });
+  if (!req.file) return res.status(400).json({ message: "No Excel file uploaded" });
+
+  const rows = readWorkbookRows(req.file);
+  let imported = 0;
+  const errors: string[] = [];
+
+  for (const [index, row] of rows.entries()) {
+    try {
+      if (type === "locations") {
+        const building = await findOrCreateBuilding(cell(row, "buildingName"));
+        const block = await findOrCreateBlock(cell(row, "blockName"), building.id);
+        const floor = await findOrCreateFloor(cell(row, "floorName"), block.id, numberCell(row, "floorLevel", 0));
+        await findOrCreateHubRoom(cell(row, "hubRoomName"), floor.id, cell(row, "hubRoomType") || "Hub Room", cell(row, "hubRoomNotes"));
+      }
+
+      if (type === "racks") {
+        const building = await findOrCreateBuilding(cell(row, "buildingName"));
+        const block = await findOrCreateBlock(cell(row, "blockName"), building.id);
+        const floor = await findOrCreateFloor(cell(row, "floorName"), block.id, numberCell(row, "floorLevel", 0));
+        const hubRoom = await findOrCreateHubRoom(cell(row, "hubRoomName"), floor.id);
+        await findOrCreateRack(cell(row, "rackName"), hubRoom.id, numberCell(row, "unitCount", 42), numberCell(row, "positionX", 0), numberCell(row, "positionY", 0), cell(row, "notes"));
+      }
+
+      if (type === "devices") {
+        const hubRoom = await prisma.hubRoom.findFirst({ where: { name: cell(row, "hubRoomName") } });
+        if (!hubRoom) throw new Error(`Hub room not found: ${cell(row, "hubRoomName")}`);
+        const rack = await prisma.rack.findFirst({ where: { name: cell(row, "rackName"), hubRoomId: hubRoom.id } });
+        if (!rack) throw new Error(`Rack not found: ${cell(row, "rackName")}`);
+        const existing = await prisma.device.findFirst({ where: { name: cell(row, "deviceName"), rackId: rack.id } });
+        const deviceData = {
+          name: cell(row, "deviceName"),
+          deviceType: cell(row, "deviceType") || "Network Switch",
+          brand: cell(row, "brand") || null,
+          model: cell(row, "model") || null,
+          ipAddress: cell(row, "ipAddress") || null,
+          macAddress: cell(row, "macAddress") || null,
+          firmwareVersion: cell(row, "firmwareVersion") || null,
+          softwareVersion: cell(row, "softwareVersion") || null,
+          serialNumber: cell(row, "serialNumber") || null,
+          installationDate: cell(row, "installationDate") ? new Date(cell(row, "installationDate")) : null,
+          location: cell(row, "location") || null,
+          startUnit: numberCell(row, "startUnit", 1),
+          heightUnits: numberCell(row, "heightUnits", 1),
+          notes: cell(row, "notes") || null,
+          rackId: rack.id
+        };
+        const device = existing ? await prisma.device.update({ where: { id: existing.id }, data: deviceData }) : await prisma.device.create({ data: deviceData });
+        await prisma.rackUnit.updateMany({ where: { rackId: rack.id, unitNumber: device.startUnit }, data: { type: "SWITCH", label: device.name, deviceId: device.id } });
+      }
+
+      if (type === "ports") {
+        const device = await prisma.device.findFirst({ where: { name: cell(row, "switchName") } });
+        if (!device) throw new Error(`Switch not found: ${cell(row, "switchName")}`);
+        const portNumber = numberCell(row, "portNumber", 0);
+        const existing = await prisma.switchPort.findFirst({ where: { deviceId: device.id, portNumber } });
+        const status = cell(row, "status") || "UNKNOWN";
+        const portData = {
+          deviceId: device.id,
+          portNumber,
+          portLabel: cell(row, "portLabel") || `Port ${portNumber}`,
+          portType: cell(row, "portType") || "RJ45",
+          status: ["CONNECTED", "DISCONNECTED", "DISABLED", "UNKNOWN"].includes(status) ? status as "CONNECTED" | "DISCONNECTED" | "DISABLED" | "UNKNOWN" : "UNKNOWN",
+          connectedDeviceName: cell(row, "connectedDeviceName") || null,
+          macAddress: cell(row, "macAddress") || null,
+          cableLabel: cell(row, "cableLabel") || null,
+          patchPanel: cell(row, "patchPanel") || null,
+          vlan: cell(row, "vlan") || null,
+          speed: cell(row, "speed") || null,
+          duplex: cell(row, "duplex") || null,
+          description: cell(row, "description") || null,
+          notes: cell(row, "notes") || null
+        };
+        existing ? await prisma.switchPort.update({ where: { id: existing.id }, data: portData }) : await prisma.switchPort.create({ data: portData });
+      }
+
+      imported += 1;
+    } catch (error) {
+      errors.push(`Row ${index + 2}: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }
+
+  res.json({ imported, errors });
+});
+
+app.get("/api/qr/:type/:id", requireAuth, async (req, res) => {
+  const frontendUrl = req.headers.origin ?? "http://localhost:5173";
+  const path = param(req.params.type) === "hub-room" ? `/hub-rooms/${param(req.params.id)}` : `/racks/${param(req.params.id)}`;
+  const png = await QRCode.toBuffer(`${frontendUrl}${path}`);
+  res.setHeader("Content-Type", "image/png");
+  res.send(png);
+});
+
+app.listen(port, () => {
+  console.log(`Rack management API running on http://localhost:${port}`);
+});

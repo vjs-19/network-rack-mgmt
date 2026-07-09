@@ -1,0 +1,48 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: rack-manager-postgres
+    environment:
+      POSTGRES_USER: rackadmin
+      POSTGRES_PASSWORD: rackpassword
+      POSTGRES_DB: rack_manager
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rackadmin -d rack_manager"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    container_name: rack-manager-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://rackadmin:rackpassword@postgres:5432/rack_manager?schema=public
+      JWT_SECRET: change-this-secret
+      PORT: 4000
+    ports:
+      - "4000:4000"
+    volumes:
+      - uploads:/app/uploads
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    container_name: rack-manager-client
+    depends_on:
+      - server
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:
+  uploads:
