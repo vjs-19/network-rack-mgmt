@@ -15,11 +15,15 @@ export function HelpPage() {
       </Card>
       <Card>
         <h2 className="mb-3 text-xl font-bold">QR Workflow</h2>
-        <p className="text-sm text-slate-300">Hub room QR codes should open the hub room layout. Rack QR codes should open the exact rack page. Use the same web app from mobile browsers connected to the same network.</p>
+        <p className="text-sm text-slate-300">Open QR from the header to print stickers for hub rooms, racks, and devices. Scanning opens the exact page in the same web app from a mobile browser on the network.</p>
+      </Card>
+      <Card>
+        <h2 className="mb-3 text-xl font-bold">Trace And Audit</h2>
+        <p className="text-sm text-slate-300">Use Trace to search cable labels, MAC addresses, devices, switch ports, patch panels, and VLANs. Audit records create, update, delete, and port connection changes.</p>
       </Card>
       <Card>
         <h2 className="mb-3 text-xl font-bold">Future Architecture</h2>
-        <p className="text-sm text-slate-300">The database already leaves space for SNMP, LLDP/CDP, live status, alerts, notifications, uploads, and audit logs. These are intentionally not implemented in Phase 1.</p>
+        <p className="text-sm text-slate-300">The database still leaves space for SNMP, LLDP/CDP, live status, alerts, notifications, and discovery integrations.</p>
       </Card>
     </div>
   );

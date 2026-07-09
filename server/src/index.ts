@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import XLSX from "xlsx";
 import { z } from "zod";
 
-import { requireAuth, signToken } from "./auth.js";
+import { requireAdmin, requireAuth, signToken } from "./auth.js";
 import { prisma } from "./prisma.js";
 
 const app = express();
@@ -198,6 +198,21 @@ async function clearDeviceFromRackUnits(deviceId: string) {
   }
 }
 
+async function logAudit(req: express.Request, action: string, entity: string, entityId?: string, details?: unknown) {
+  await prisma.auditLog.create({
+    data: {
+      action,
+      entity,
+      entityId,
+      details: JSON.stringify({
+        user: req.user?.email ?? "system",
+        role: req.user?.role ?? "unknown",
+        details: details ?? {},
+      }),
+    },
+  });
+}
+
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static("uploads"));
@@ -264,6 +279,47 @@ app.get("/api/master-data", requireAuth, async (_req, res) => {
   ]);
 
   res.json({ buildings, blocks, floors, hubRooms, racks, devices, ports });
+});
+
+app.get("/api/audit-logs", requireAuth, async (_req, res) => {
+  const logs = await prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 200 });
+  res.json(logs);
+});
+
+app.get("/api/qr-items", requireAuth, async (req, res) => {
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const [hubRooms, racks, devices] = await Promise.all([
+    prisma.hubRoom.findMany({ orderBy: { name: "asc" }, include: { floor: { include: { block: { include: { building: true } } } } } }),
+    prisma.rack.findMany({ orderBy: { name: "asc" }, include: { hubRoom: true } }),
+    prisma.device.findMany({ orderBy: { name: "asc" }, include: { rack: { include: { hubRoom: true } } } }),
+  ]);
+
+  res.json([
+    ...hubRooms.map((room) => ({
+      id: room.id,
+      type: "hub-room",
+      label: room.name,
+      location: `${room.floor.block.building.name} / ${room.floor.block.name} / ${room.floor.name}`,
+      href: `/hub-rooms/${room.id}`,
+      qrUrl: `${baseUrl}/api/qr/hub-room/${room.id}`,
+    })),
+    ...racks.map((rack) => ({
+      id: rack.id,
+      type: "rack",
+      label: rack.name,
+      location: rack.hubRoom.name,
+      href: `/racks/${rack.id}`,
+      qrUrl: `${baseUrl}/api/qr/rack/${rack.id}`,
+    })),
+    ...devices.map((device) => ({
+      id: device.id,
+      type: "device",
+      label: device.name,
+      location: `${device.rack.hubRoom.name} / ${device.rack.name}`,
+      href: `/devices/${device.id}`,
+      qrUrl: `${baseUrl}/api/qr/device/${device.id}`,
+    })),
+  ]);
 });
 
 app.get("/api/cable-trace", requireAuth, async (req, res) => {
@@ -373,14 +429,18 @@ app.get("/api/cable-trace", requireAuth, async (req, res) => {
   res.json([...deviceResults, ...portResults]);
 });
 
-app.put("/api/buildings/:id", requireAuth, async (req, res) => {
+app.put("/api/buildings/:id", requireAuth, requireAdmin, async (req, res) => {
   const schema = z.object({ name: z.string().min(1) });
   const building = await prisma.building.update({ where: { id: param(req.params.id) }, data: schema.parse(req.body) });
+  await logAudit(req, "UPDATE", "Building", building.id, { name: building.name });
   res.json(building);
 });
 
-app.delete("/api/buildings/:id", requireAuth, async (req, res) => {
+app.delete("/api/buildings/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = param(req.params.id);
+  const building = await prisma.building.findUnique({ where: { id } });
   await prisma.building.delete({ where: { id: param(req.params.id) } });
+  await logAudit(req, "DELETE", "Building", id, { name: building?.name });
   res.status(204).send();
 });
 
@@ -399,6 +459,7 @@ app.post("/api/locations", requireAuth, async (req, res) => {
   const block = await findOrCreateBlock(data.blockName, building.id);
   const floor = await findOrCreateFloor(data.floorName, block.id, data.floorLevel);
   const hubRoom = await findOrCreateHubRoom(data.hubRoomName, floor.id, data.hubRoomType, data.hubRoomNotes);
+  await logAudit(req, "CREATE", "HubRoom", hubRoom.id, data);
   res.status(201).json({ building, block, floor, hubRoom });
 });
 
@@ -426,16 +487,21 @@ app.get("/api/hub-rooms/:id", requireAuth, async (req, res) => {
 app.post("/api/hub-rooms", requireAuth, async (req, res) => {
   const schema = z.object({ name: z.string(), floorId: z.string(), type: z.string().optional(), notes: z.string().optional() });
   const hubRoom = await prisma.hubRoom.create({ data: schema.parse(req.body) });
+  await logAudit(req, "CREATE", "HubRoom", hubRoom.id, { name: hubRoom.name });
   res.status(201).json(hubRoom);
 });
 
 app.put("/api/hub-rooms/:id", requireAuth, async (req, res) => {
   const hubRoom = await prisma.hubRoom.update({ where: { id: param(req.params.id) }, data: req.body });
+  await logAudit(req, "UPDATE", "HubRoom", hubRoom.id, req.body);
   res.json(hubRoom);
 });
 
-app.delete("/api/hub-rooms/:id", requireAuth, async (req, res) => {
-  await prisma.hubRoom.delete({ where: { id: param(req.params.id) } });
+app.delete("/api/hub-rooms/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = param(req.params.id);
+  const hubRoom = await prisma.hubRoom.findUnique({ where: { id } });
+  await prisma.hubRoom.delete({ where: { id } });
+  await logAudit(req, "DELETE", "HubRoom", id, { name: hubRoom?.name });
   res.status(204).send();
 });
 
@@ -473,16 +539,21 @@ app.post("/api/racks", requireAuth, async (req, res) => {
   });
   const rack = await prisma.rack.create({ data: schema.parse(req.body) });
   await ensureRackUnits(rack.id, rack.unitCount);
+  await logAudit(req, "CREATE", "Rack", rack.id, { name: rack.name, unitCount: rack.unitCount });
   res.status(201).json(rack);
 });
 
 app.put("/api/racks/:id", requireAuth, async (req, res) => {
   const rack = await prisma.rack.update({ where: { id: param(req.params.id) }, data: req.body });
+  await logAudit(req, "UPDATE", "Rack", rack.id, req.body);
   res.json(rack);
 });
 
-app.delete("/api/racks/:id", requireAuth, async (req, res) => {
-  await prisma.rack.delete({ where: { id: param(req.params.id) } });
+app.delete("/api/racks/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = param(req.params.id);
+  const rack = await prisma.rack.findUnique({ where: { id } });
+  await prisma.rack.delete({ where: { id } });
+  await logAudit(req, "DELETE", "Rack", id, { name: rack?.name });
   res.status(204).send();
 });
 
@@ -544,6 +615,7 @@ app.post("/api/devices", requireAuth, async (req, res) => {
   }
 
   await syncDeviceToRackUnits(device);
+  await logAudit(req, "CREATE", "Device", device.id, { name: device.name, deviceType: device.deviceType });
 
   res.status(201).json(device);
 });
@@ -551,17 +623,22 @@ app.post("/api/devices", requireAuth, async (req, res) => {
 app.put("/api/devices/:id", requireAuth, async (req, res) => {
   const device = await prisma.device.update({ where: { id: param(req.params.id) }, data: req.body });
   await syncDeviceToRackUnits(device);
+  await logAudit(req, "UPDATE", "Device", device.id, req.body);
   res.json(device);
 });
 
-app.delete("/api/devices/:id", requireAuth, async (req, res) => {
-  await clearDeviceFromRackUnits(param(req.params.id));
-  await prisma.device.delete({ where: { id: param(req.params.id) } });
+app.delete("/api/devices/:id", requireAuth, requireAdmin, async (req, res) => {
+  const id = param(req.params.id);
+  const device = await prisma.device.findUnique({ where: { id } });
+  await clearDeviceFromRackUnits(id);
+  await prisma.device.delete({ where: { id } });
+  await logAudit(req, "DELETE", "Device", id, { name: device?.name });
   res.status(204).send();
 });
 
 app.put("/api/ports/:id", requireAuth, async (req, res) => {
   const portRow = await prisma.switchPort.update({ where: { id: param(req.params.id) }, data: req.body });
+  await logAudit(req, "UPDATE", "Port", portRow.id, { portLabel: portRow.portLabel, ...req.body });
   res.json(portRow);
 });
 
@@ -577,6 +654,7 @@ app.delete("/api/ports/:id/connection", requireAuth, async (req, res) => {
       notes: null,
     },
   });
+  await logAudit(req, "CLEAR_CONNECTION", "Port", portRow.id, { portLabel: portRow.portLabel });
   res.json(portRow);
 });
 
@@ -843,9 +921,11 @@ app.post("/api/import-export/import/:type", requireAuth, importUpload.single("fi
   res.json({ imported, errors });
 });
 
-app.get("/api/qr/:type/:id", requireAuth, async (req, res) => {
+app.get("/api/qr/:type/:id", async (req, res) => {
   const frontendUrl = req.headers.origin ?? "http://localhost:5173";
-  const path = param(req.params.type) === "hub-room" ? `/hub-rooms/${param(req.params.id)}` : `/racks/${param(req.params.id)}`;
+  const type = param(req.params.type);
+  const id = param(req.params.id);
+  const path = type === "hub-room" ? `/hub-rooms/${id}` : type === "device" ? `/devices/${id}` : `/racks/${id}`;
   const png = await QRCode.toBuffer(`${frontendUrl}${path}`);
   res.setHeader("Content-Type", "image/png");
   res.send(png);

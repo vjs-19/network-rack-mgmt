@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import "./index.css";
 import { AppLayout } from "./components/AppLayout";
+import { AuditLogPage } from "./pages/AuditLogPage";
 import { CableTracePage } from "./pages/CableTracePage";
 import { Dashboard } from "./pages/Dashboard";
 import { DevicePage } from "./pages/DevicePage";
@@ -12,6 +13,7 @@ import { HubRoomPage } from "./pages/HubRoomPage";
 import { ImportExportPage } from "./pages/ImportExportPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MasterDataPage } from "./pages/MasterDataPage";
+import { QrCodesPage } from "./pages/QrCodesPage";
 import { RackPage } from "./pages/RackPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -37,6 +39,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="devices/:id" element={<DevicePage />} />
           <Route path="master-data" element={<MasterDataPage />} />
           <Route path="trace" element={<CableTracePage />} />
+          <Route path="qr-codes" element={<QrCodesPage />} />
+          <Route path="audit-logs" element={<AuditLogPage />} />
           <Route path="import-export" element={<ImportExportPage />} />
           <Route path="help" element={<HelpPage />} />
         </Route>
