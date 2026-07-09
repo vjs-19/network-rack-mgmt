@@ -167,13 +167,13 @@ async function ensureRackUnits(rackId: string, unitCount: number) {
 
 async function syncDeviceToRackUnits(device: { id: string; rackId: string; name: string; deviceType: string; startUnit: number; heightUnits: number }) {
   const heightUnits = Math.max(Number(device.heightUnits) || 1, 1);
-  const startUnit = Number(device.startUnit);
-  const endUnit = startUnit + heightUnits - 1;
+  const topUnit = Number(device.startUnit);
+  const bottomUnit = Math.max(topUnit - heightUnits + 1, 1);
 
   await clearDeviceFromRackUnits(device.id);
 
   await prisma.rackUnit.updateMany({
-    where: { rackId: device.rackId, unitNumber: { gte: startUnit, lte: endUnit } },
+    where: { rackId: device.rackId, unitNumber: { gte: bottomUnit, lte: topUnit } },
     data: {
       type: rackUnitTypeForDevice(device.deviceType),
       label: heightUnits > 1 ? `${device.name} (${heightUnits}U)` : device.name,

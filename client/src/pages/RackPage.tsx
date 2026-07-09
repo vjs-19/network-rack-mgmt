@@ -167,6 +167,15 @@ export function RackPage() {
     navigate("/");
   }
 
+  async function deleteDevice(deviceId: string, deviceName: string) {
+    const confirmed = window.confirm(`Delete ${deviceName} from this rack?`);
+    if (!confirmed) return;
+
+    await apiFetch(`/api/devices/${deviceId}`, { method: "DELETE" });
+    setMessage(`${deviceName} deleted from rack.`);
+    loadRack();
+  }
+
   if (!rack) return <div>Loading rack...</div>;
 
   return (
@@ -244,6 +253,7 @@ export function RackPage() {
               <Input placeholder="IP Address" value={deviceForm.ipAddress} onChange={(event) => setDeviceForm((current) => ({ ...current, ipAddress: event.target.value }))} />
               <Input placeholder="MAC Address" value={deviceForm.macAddress} onChange={(event) => setDeviceForm((current) => ({ ...current, macAddress: event.target.value }))} />
               <Input placeholder="Serial Number" value={deviceForm.serialNumber} onChange={(event) => setDeviceForm((current) => ({ ...current, serialNumber: event.target.value }))} />
+              <p className="text-xs text-slate-400">Selected U is the top U. Example: 2U at U45 uses U45 and U44.</p>
               <div className="grid grid-cols-3 gap-2">
                 <Input type="number" title="Start U" value={deviceForm.startUnit} onChange={(event) => setDeviceForm((current) => ({ ...current, startUnit: Number(event.target.value) }))} />
                 <Input type="number" title="Height U" value={deviceForm.heightUnits} onChange={(event) => setDeviceForm((current) => ({ ...current, heightUnits: Number(event.target.value) }))} />
@@ -266,10 +276,15 @@ export function RackPage() {
           <h2 className="mb-2 font-semibold">Devices</h2>
           <div className="space-y-2">
             {rack.devices.map((device) => (
-              <Link key={device.id} to={`/devices/${device.id}`} className="block rounded-lg bg-white/10 p-3 hover:bg-white/15">
-                {device.name}
-                <div className="text-xs text-slate-400">U{device.startUnit} · {device.model ?? "-"}</div>
-              </Link>
+              <div key={device.id} className="flex items-center gap-2 rounded-lg bg-white/10 p-3 hover:bg-white/15">
+                <Link to={`/devices/${device.id}`} className="min-w-0 flex-1">
+                  <div className="truncate">{device.name}</div>
+                  <div className="text-xs text-slate-400">Top U{device.startUnit} - {device.heightUnits}U - {device.model ?? "-"}</div>
+                </Link>
+                <Button type="button" variant="danger" onClick={() => deleteDevice(device.id, device.name)} title="Delete this device only">
+                  <Trash2 size={16} />
+                </Button>
+              </div>
             ))}
           </div>
         </Card>
