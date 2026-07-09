@@ -4,12 +4,14 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
 import "./index.css";
 import { AppLayout } from "./components/AppLayout";
+import { CableTracePage } from "./pages/CableTracePage";
 import { Dashboard } from "./pages/Dashboard";
 import { DevicePage } from "./pages/DevicePage";
 import { HelpPage } from "./pages/HelpPage";
 import { HubRoomPage } from "./pages/HubRoomPage";
 import { ImportExportPage } from "./pages/ImportExportPage";
 import { LoginPage } from "./pages/LoginPage";
+import { MasterDataPage } from "./pages/MasterDataPage";
 import { RackPage } from "./pages/RackPage";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -33,6 +35,8 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           <Route path="hub-rooms/:id" element={<HubRoomPage />} />
           <Route path="racks/:id" element={<RackPage />} />
           <Route path="devices/:id" element={<DevicePage />} />
+          <Route path="master-data" element={<MasterDataPage />} />
+          <Route path="trace" element={<CableTracePage />} />
           <Route path="import-export" element={<ImportExportPage />} />
           <Route path="help" element={<HelpPage />} />
         </Route>

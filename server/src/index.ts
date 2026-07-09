@@ -252,6 +252,127 @@ app.get("/api/navigation", requireAuth, async (_req, res) => {
   res.json(buildings);
 });
 
+app.get("/api/master-data", requireAuth, async (_req, res) => {
+  const [buildings, blocks, floors, hubRooms, racks, devices, ports] = await Promise.all([
+    prisma.building.findMany({ orderBy: { createdAt: "asc" }, include: { blocks: true } }),
+    prisma.block.findMany({ orderBy: { name: "asc" }, include: { building: true, floors: true } }),
+    prisma.floor.findMany({ orderBy: [{ level: "asc" }, { name: "asc" }], include: { block: { include: { building: true } }, hubRooms: true } }),
+    prisma.hubRoom.findMany({ orderBy: { name: "asc" }, include: { floor: { include: { block: { include: { building: true } } } }, racks: true } }),
+    prisma.rack.findMany({ orderBy: { name: "asc" }, include: { hubRoom: { include: { floor: { include: { block: { include: { building: true } } } } } }, devices: true } }),
+    prisma.device.findMany({ orderBy: { name: "asc" }, include: { rack: { include: { hubRoom: true } }, ports: true } }),
+    prisma.switchPort.findMany({ orderBy: [{ device: { name: "asc" } }, { portNumber: "asc" }], include: { device: { include: { rack: { include: { hubRoom: true } } } } } }),
+  ]);
+
+  res.json({ buildings, blocks, floors, hubRooms, racks, devices, ports });
+});
+
+app.get("/api/cable-trace", requireAuth, async (req, res) => {
+  const rawQuery = Array.isArray(req.query.query) ? req.query.query[0] : req.query.query;
+  const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
+  if (!query) return res.json([]);
+
+  const contains = { contains: query, mode: "insensitive" as const };
+  const [devices, ports] = await Promise.all([
+    prisma.device.findMany({
+      where: {
+        OR: [
+          { name: contains },
+          { deviceType: contains },
+          { brand: contains },
+          { model: contains },
+          { ipAddress: contains },
+          { macAddress: contains },
+          { serialNumber: contains },
+          { location: contains },
+          { notes: contains },
+        ],
+      },
+      include: { rack: { include: { hubRoom: { include: { floor: { include: { block: { include: { building: true } } } } } } } }, ports: true },
+      take: 25,
+    }),
+    prisma.switchPort.findMany({
+      where: {
+        OR: [
+          { portLabel: contains },
+          { portType: contains },
+          { connectedDeviceName: contains },
+          { macAddress: contains },
+          { cableLabel: contains },
+          { patchPanel: contains },
+          { vlan: contains },
+          { speed: contains },
+          { duplex: contains },
+          { description: contains },
+          { notes: contains },
+          { device: { name: contains } },
+        ],
+      },
+      include: {
+        device: {
+          include: {
+            rack: {
+              include: {
+                hubRoom: {
+                  include: {
+                    floor: { include: { block: { include: { building: true } } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      take: 50,
+    }),
+  ]);
+
+  const deviceResults = devices.map((device) => ({
+    id: `device-${device.id}`,
+    type: "Device",
+    title: device.name,
+    subtitle: [device.ipAddress, device.macAddress, device.deviceType].filter(Boolean).join(" / "),
+    href: `/devices/${device.id}`,
+    path: [
+      device.name,
+      device.rack.name,
+      device.rack.hubRoom.name,
+      device.rack.hubRoom.floor.name,
+      device.rack.hubRoom.floor.block.name,
+      device.rack.hubRoom.floor.block.building.name,
+    ],
+    details: {
+      cableLabel: null,
+      portLabel: null,
+      patchPanel: null,
+      vlan: null,
+    },
+  }));
+
+  const portResults = ports.map((port) => ({
+    id: `port-${port.id}`,
+    type: port.portType === "POWER_SOCKET" ? "Power Socket" : "Switch Port",
+    title: `${port.device.name} ${port.portLabel}`,
+    subtitle: [port.connectedDeviceName, port.macAddress, port.cableLabel].filter(Boolean).join(" / ") || "No connection details",
+    href: `/devices/${port.device.id}`,
+    path: [
+      port.connectedDeviceName || "-",
+      port.cableLabel || "-",
+      `${port.device.name} ${port.portLabel}`,
+      port.device.rack.name,
+      port.device.rack.hubRoom.name,
+      port.device.rack.hubRoom.floor.block.name,
+    ],
+    details: {
+      cableLabel: port.cableLabel,
+      portLabel: port.portLabel,
+      patchPanel: port.patchPanel,
+      vlan: port.vlan,
+    },
+  }));
+
+  res.json([...deviceResults, ...portResults]);
+});
+
 app.put("/api/buildings/:id", requireAuth, async (req, res) => {
   const schema = z.object({ name: z.string().min(1) });
   const building = await prisma.building.update({ where: { id: param(req.params.id) }, data: schema.parse(req.body) });
