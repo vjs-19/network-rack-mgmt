@@ -20,20 +20,20 @@
 }
 
 .light {
-  --background: 210 18% 93%;
-  --foreground: 222 47% 11%;
-  --border: 214 20% 78%;
-  --primary: 199 62% 38%;
-  --muted: 215 18% 42%;
-  --accent: 262 42% 45%;
-  --panel: rgba(248, 250, 252, 0.72);
-  --panel-strong: rgba(248, 250, 252, 0.86);
-  --panel-soft: rgba(226, 232, 240, 0.58);
-  --card-border: rgba(15, 23, 42, 0.10);
-  --copy-muted: #596579;
-  --hero-one: rgba(14, 116, 144, 0.08);
-  --hero-two: rgba(88, 28, 135, 0.055);
-  --hero-three: rgba(15, 118, 110, 0.055);
+  --background: 212 24% 87%;
+  --foreground: 220 42% 12%;
+  --border: 203 28% 67%;
+  --primary: 190 88% 39%;
+  --muted: 213 18% 38%;
+  --accent: 214 62% 43%;
+  --panel: rgba(226, 234, 242, 0.76);
+  --panel-strong: rgba(215, 226, 236, 0.88);
+  --panel-soft: rgba(200, 213, 226, 0.66);
+  --card-border: rgba(37, 99, 135, 0.20);
+  --copy-muted: #405267;
+  --hero-one: rgba(8, 145, 178, 0.18);
+  --hero-two: rgba(37, 99, 235, 0.12);
+  --hero-three: rgba(14, 116, 144, 0.10);
 }
 
 body {
@@ -156,11 +156,67 @@ body {
 }
 
 .light .dashboard-hero::after {
-  opacity: 0.35;
+  opacity: 0.62;
 }
 
 .light .metric-tile::before {
-  opacity: 0.45;
+  opacity: 0.72;
+}
+
+.light .app-header {
+  background: rgba(209, 222, 234, 0.82);
+}
+
+.light .glass-card {
+  box-shadow: 0 22px 70px rgba(15, 52, 82, 0.16);
+}
+
+.light .brand-logo-shell {
+  background: #eef4f8;
+  box-shadow: 0 10px 30px rgba(15, 52, 82, 0.13);
+}
+
+.light input,
+.light select,
+.light textarea {
+  border-color: rgba(37, 99, 135, 0.22) !important;
+  background: rgba(221, 232, 241, 0.82) !important;
+  color: #102033 !important;
+}
+
+.light input::placeholder,
+.light textarea::placeholder {
+  color: #64748b;
+}
+
+.light .bg-white\/10 {
+  background-color: rgba(203, 216, 229, 0.72);
+}
+
+.light .text-white {
+  color: #132238;
+}
+
+.light .text-slate-200,
+.light .text-slate-300,
+.light .text-slate-400 {
+  color: #475569;
+}
+
+.light .text-cyan-200,
+.light .text-cyan-300 {
+  color: #087990;
+}
+
+.light .border-white\/10,
+.light .border-white\/15 {
+  border-color: rgba(37, 99, 135, 0.20);
+}
+
+.light .bg-slate-950\/50,
+.light .bg-slate-950\/60,
+.light .bg-slate-950\/70 {
+  background-color: rgba(215, 226, 236, 0.78);
 }
 
 .rack-photo-frame {
