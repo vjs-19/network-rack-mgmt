@@ -9,8 +9,6 @@ import {
   Network,
   RadioTower,
   Server,
-  ShieldCheck,
-  Sparkles,
   Trash2,
   type LucideIcon
 } from "lucide-react";
@@ -178,14 +176,6 @@ export function Dashboard() {
       <section className="dashboard-hero rounded-2xl">
         <div className="relative z-10 grid gap-5 p-5 lg:grid-cols-[1fr_380px] lg:p-6">
           <div>
-            <div className="mb-4 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-xs font-semibold text-cyan-200">
-                <Sparkles size={14} /> Latest UI
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                <ShieldCheck size={14} /> Phase 1 Ready
-              </span>
-            </div>
             <h1 className="max-w-4xl text-3xl font-black tracking-tight md:text-5xl">
               Visual Network Rack Operations
             </h1>
@@ -253,7 +243,7 @@ export function Dashboard() {
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-2xl font-black">Infrastructure Map</h2>
-              <p className="muted-copy text-sm">{summary.rooms} hub room{summary.rooms === 1 ? "" : "s"} available in this prototype.</p>
+              <p className="muted-copy text-sm">{summary.rooms} hub room{summary.rooms === 1 ? "" : "s"} available in this system.</p>
             </div>
           </div>
 

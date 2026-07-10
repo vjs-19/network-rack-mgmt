@@ -578,4 +578,4 @@ The database and code are prepared for future modules such as:
 - Real rack drawing calibration
 - Printable QR sticker sheets
 
-These are not required for the current prototype.
+These are planned future integrations for production environments that need live network monitoring.

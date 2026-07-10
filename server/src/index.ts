@@ -875,7 +875,7 @@ app.get("/api/import-export/templates/:type", requireAuth, async (req, res) => {
         ipAddress: "10.10.1.10",
         macAddress: "00:11:22:33:44:55",
         firmwareVersion: "1.0.0",
-        softwareVersion: "NX-Phase1",
+        softwareVersion: "NX-Rack",
         serialNumber: "SN001",
         installationDate: "2026-01-15",
         location: "First Floor Hub Room / Rack A",

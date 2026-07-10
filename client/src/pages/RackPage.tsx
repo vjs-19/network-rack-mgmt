@@ -282,7 +282,7 @@ export function RackPage() {
         {message && <div className="glass-soft rounded-xl p-3 text-sm text-emerald-200">{message}</div>}
         <Card>
           <h2 className="mb-2 font-semibold">Rack Management</h2>
-          <p className="text-sm text-slate-400">Add, delete, rename, move position, and upload rack drawings. Phase 1 displays the controls and connects rack data.</p>
+          <p className="text-sm text-slate-400">Add, delete, rename, move position, upload rack drawings, and keep rack data aligned with the physical room.</p>
         </Card>
         <Card>
           <h2 className="mb-2 font-semibold">Devices</h2>

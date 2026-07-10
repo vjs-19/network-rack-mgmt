@@ -40,7 +40,7 @@ export function LoginPage() {
           <div className="rounded-xl bg-cyan-400 p-3 text-slate-950"><Server /></div>
           <div>
             <h1 className="text-2xl font-bold">Network Rack Manager</h1>
-            <p className="text-sm text-slate-400">JWT protected prototype login</p>
+            <p className="text-sm text-slate-400">Secure network rack management login</p>
           </div>
         </div>
         <form className="space-y-3" onSubmit={submit}>

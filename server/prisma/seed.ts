@@ -31,7 +31,7 @@ async function main() {
   const block = await prisma.block.create({ data: { name: "Block 1", buildingId: building.id } });
   const floor = await prisma.floor.create({ data: { name: "First Floor", level: 1, blockId: block.id } });
   const hubRoom = await prisma.hubRoom.create({
-    data: { name: "First Floor Hub Room", type: "Hub Room", floorId: floor.id, notes: "Phase 1 sample room." },
+    data: { name: "First Floor Hub Room", type: "Hub Room", floorId: floor.id, notes: "Sample office hub room." },
   });
 
   for (const [rackIndex, rackName] of ["Rack A", "Rack B", "Rack C"].entries()) {
@@ -61,11 +61,11 @@ async function main() {
           ipAddress: `10.10.${rackIndex + 1}.${10 + switchIndex}`,
           macAddress: `00:11:22:33:${String(rackIndex + 1).padStart(2, "0")}:${String(switchIndex + 1).padStart(2, "0")}`,
           firmwareVersion: "1.0.0",
-          softwareVersion: "NX-Phase1",
+          softwareVersion: "NX-Rack",
           serialNumber: `SN-P1-${switchNumber.toString().padStart(4, "0")}`,
           installationDate: new Date("2026-01-15"),
           location: `${hubRoom.name} / ${rackName}`,
-          notes: "Dummy switch for clickable Phase 1 prototype.",
+          notes: "Sample switch for clickable rack management.",
           rackId: rack.id,
           startUnit,
           heightUnits: 1,
