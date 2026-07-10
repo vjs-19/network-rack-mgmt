@@ -117,8 +117,8 @@ function auditWhereFromQuery(req: express.Request) {
 
 function validateImportRows(type: ImportType, rows: Record<string, unknown>[]) {
   const required: Record<ImportType, string[]> = {
-    locations: ["buildingName", "blockName", "floorLevel", "hubRoomName"],
-    racks: ["buildingName", "blockName", "hubRoomName", "rackName", "unitCount"],
+    locations: ["buildingName", "blockName", "floorName", "floorLevel", "hubRoomName"],
+    racks: ["buildingName", "blockName", "floorName", "hubRoomName", "rackName", "unitCount"],
     devices: ["hubRoomName", "rackName", "deviceName", "deviceType", "startUnit"],
     ports: ["switchName", "portNumber", "status"],
   };
@@ -151,6 +151,82 @@ function validateImportRows(type: ImportType, rows: Record<string, unknown>[]) {
   });
 
   return { valid: errors.length === 0, totalRows: rows.length, errors, previewRows: rows.slice(0, 10) };
+}
+
+async function validateImportRowsWithDuplicates(type: ImportType, rows: Record<string, unknown>[]) {
+  const validation = validateImportRows(type, rows);
+  const errors = [...validation.errors];
+
+  function seenDuplicate(key: string, value: string, rowNumber: number, seen: Map<string, number>) {
+    if (!value) return;
+    const normalized = value.toLowerCase();
+    const firstRow = seen.get(normalized);
+    if (firstRow) {
+      errors.push({ row: rowNumber, field: key, message: `${key} duplicates row ${firstRow}` });
+      return;
+    }
+    seen.set(normalized, rowNumber);
+  }
+
+  if (type === "devices") {
+    const deviceNames = new Map<string, number>();
+    const ipAddresses = new Map<string, number>();
+    const macAddresses = new Map<string, number>();
+
+    for (const [index, row] of rows.entries()) {
+      const rowNumber = index + 2;
+      seenDuplicate("deviceName", `${cell(row, "rackName")}::${cell(row, "deviceName")}`, rowNumber, deviceNames);
+      seenDuplicate("ipAddress", cell(row, "ipAddress"), rowNumber, ipAddresses);
+      seenDuplicate("macAddress", cell(row, "macAddress"), rowNumber, macAddresses);
+
+      const deviceType = cell(row, "deviceType").toLowerCase();
+      if (deviceType.includes("switch") && !cell(row, "ipAddress")) {
+        errors.push({ row: rowNumber, field: "ipAddress", message: "ipAddress is required for switches" });
+      }
+      if (deviceType.includes("power supply") && Number(row.heightUnits || 0) < 1) {
+        errors.push({ row: rowNumber, field: "heightUnits", message: "heightUnits is required for power supply modules" });
+      }
+
+      const ipAddress = cell(row, "ipAddress");
+      if (ipAddress) {
+        const existingIp = await prisma.device.findFirst({ where: { ipAddress } });
+        if (existingIp && existingIp.name !== cell(row, "deviceName")) {
+          errors.push({ row: rowNumber, field: "ipAddress", message: `ipAddress already used by ${existingIp.name}` });
+        }
+      }
+
+      const macAddress = cell(row, "macAddress");
+      if (macAddress) {
+        const existingMac = await prisma.device.findFirst({ where: { macAddress } });
+        if (existingMac && existingMac.name !== cell(row, "deviceName")) {
+          errors.push({ row: rowNumber, field: "macAddress", message: `macAddress already used by ${existingMac.name}` });
+        }
+      }
+    }
+  }
+
+  if (type === "ports") {
+    const switchPorts = new Map<string, number>();
+    const cableLabels = new Map<string, number>();
+    const macAddresses = new Map<string, number>();
+
+    for (const [index, row] of rows.entries()) {
+      const rowNumber = index + 2;
+      seenDuplicate("switchPort", `${cell(row, "switchName")}::${cell(row, "portNumber")}`, rowNumber, switchPorts);
+      seenDuplicate("cableLabel", cell(row, "cableLabel"), rowNumber, cableLabels);
+      seenDuplicate("macAddress", cell(row, "macAddress"), rowNumber, macAddresses);
+
+      const cableLabel = cell(row, "cableLabel");
+      if (cableLabel) {
+        const existingCable = await prisma.switchPort.findFirst({ where: { cableLabel }, include: { device: true } });
+        if (existingCable && (existingCable.device.name !== cell(row, "switchName") || existingCable.portNumber !== numberCell(row, "portNumber", 0))) {
+          errors.push({ row: rowNumber, field: "cableLabel", message: `cableLabel already used on ${existingCable.device.name} ${existingCable.portLabel}` });
+        }
+      }
+    }
+  }
+
+  return { ...validation, valid: errors.length === 0, errors };
 }
 
 function workbookResponse(res: express.Response, fileName: string, rows: Record<string, unknown>[]) {
@@ -958,10 +1034,45 @@ app.delete("/api/devices/:id", requireAuth, requireAdmin, async (req, res) => {
   res.status(204).send();
 });
 
+app.put("/api/bulk/devices", requireAuth, requireEditor, async (req, res) => {
+  const schema = z.object({
+    ids: z.array(z.string()).min(1),
+    patch: z.object({
+      deviceType: z.string().optional(),
+      location: z.string().nullable().optional(),
+      notes: z.string().nullable().optional(),
+      brand: z.string().nullable().optional(),
+      model: z.string().nullable().optional(),
+    }),
+  });
+  const data = schema.parse(req.body);
+  const result = await prisma.device.updateMany({ where: { id: { in: data.ids } }, data: data.patch });
+  await logAudit(req, "BULK_UPDATE", "Device", undefined, { count: result.count, patch: data.patch });
+  res.json(result);
+});
+
 app.put("/api/ports/:id", requireAuth, requireEditor, async (req, res) => {
   const portRow = await prisma.switchPort.update({ where: { id: param(req.params.id) }, data: req.body });
   await logAudit(req, "UPDATE", "Port", portRow.id, { portLabel: portRow.portLabel, ...req.body });
   res.json(portRow);
+});
+
+app.put("/api/bulk/ports", requireAuth, requireEditor, async (req, res) => {
+  const schema = z.object({
+    ids: z.array(z.string()).min(1),
+    patch: z.object({
+      status: z.enum(["CONNECTED", "DISCONNECTED", "DISABLED", "UNKNOWN"]).optional(),
+      vlan: z.string().nullable().optional(),
+      patchPanel: z.string().nullable().optional(),
+      speed: z.string().nullable().optional(),
+      duplex: z.string().nullable().optional(),
+      notes: z.string().nullable().optional(),
+    }),
+  });
+  const data = schema.parse(req.body);
+  const result = await prisma.switchPort.updateMany({ where: { id: { in: data.ids } }, data: data.patch });
+  await logAudit(req, "BULK_UPDATE", "Port", undefined, { count: result.count, patch: data.patch });
+  res.json(result);
 });
 
 app.delete("/api/ports/:id/connection", requireAuth, requireEditor, async (req, res) => {
@@ -1162,7 +1273,7 @@ app.post("/api/import-export/preview/:type", requireAuth, requireEditor, importU
   if (!req.file) return res.status(400).json({ message: "No Excel file uploaded" });
 
   const rows = readWorkbookRows(req.file);
-  const validation = validateImportRows(type, rows);
+  const validation = await validateImportRowsWithDuplicates(type, rows);
   res.json(validation);
 });
 
@@ -1172,7 +1283,7 @@ app.post("/api/import-export/import/:type", requireAuth, requireEditor, importUp
   if (!req.file) return res.status(400).json({ message: "No Excel file uploaded" });
 
   const rows = readWorkbookRows(req.file);
-  const validation = validateImportRows(type, rows);
+  const validation = await validateImportRowsWithDuplicates(type, rows);
   if (!validation.valid) {
     return res.status(400).json({ imported: 0, errors: validation.errors.map((error) => `Row ${error.row}: ${error.message}`), validation });
   }

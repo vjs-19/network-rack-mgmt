@@ -32,6 +32,9 @@ export function MasterDataPage() {
   const [data, setData] = useState<MasterData | null>(null);
   const [active, setActive] = useState<TabKey>("buildings");
   const [message, setMessage] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [devicePatch, setDevicePatch] = useState({ deviceType: "", location: "", notes: "" });
+  const [portPatch, setPortPatch] = useState({ status: "", vlan: "", patchPanel: "", notes: "" });
 
   async function loadData() {
     setData(await apiFetch<MasterData>("/api/master-data"));
@@ -40,6 +43,10 @@ export function MasterDataPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [active]);
 
   const rows = useMemo(() => (data ? data[active] : []), [active, data]);
 
@@ -54,6 +61,30 @@ export function MasterDataPage() {
     if (!confirmed) return;
     await apiFetch(`/api/${endpoint}/${id}`, { method: "DELETE" });
     setMessage(`${name} deleted.`);
+    loadData();
+  }
+
+  function toggleSelection(id: string) {
+    setSelectedIds((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
+
+  async function applyBulkEdit() {
+    const endpoint = active === "devices" ? "/api/bulk/devices" : active === "ports" ? "/api/bulk/ports" : "";
+    if (!endpoint || selectedIds.length === 0) return;
+
+    const sourcePatch = active === "devices" ? devicePatch : portPatch;
+    const patch = Object.fromEntries(Object.entries(sourcePatch).filter(([, value]) => value !== ""));
+    if (Object.keys(patch).length === 0) {
+      setMessage("Enter at least one bulk edit value.");
+      return;
+    }
+
+    await apiFetch(endpoint, {
+      method: "PUT",
+      body: JSON.stringify({ ids: selectedIds, patch }),
+    });
+    setMessage(`Updated ${selectedIds.length} ${active}.`);
+    setSelectedIds([]);
     loadData();
   }
 
@@ -76,11 +107,43 @@ export function MasterDataPage() {
         ))}
       </div>
 
+      {(active === "devices" || active === "ports") && (
+        <Card>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-bold">Bulk Edit {active === "devices" ? "Devices" : "Ports"}</h2>
+            <span className="muted-copy text-sm">{selectedIds.length} selected</span>
+          </div>
+          {active === "devices" ? (
+            <div className="grid gap-2 md:grid-cols-4">
+              <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" placeholder="Device type" value={devicePatch.deviceType} onChange={(event) => setDevicePatch({ ...devicePatch, deviceType: event.target.value })} />
+              <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" placeholder="Location" value={devicePatch.location} onChange={(event) => setDevicePatch({ ...devicePatch, location: event.target.value })} />
+              <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" placeholder="Notes" value={devicePatch.notes} onChange={(event) => setDevicePatch({ ...devicePatch, notes: event.target.value })} />
+              <Button type="button" onClick={applyBulkEdit}>Apply To Selected</Button>
+            </div>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-5">
+              <select className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" value={portPatch.status} onChange={(event) => setPortPatch({ ...portPatch, status: event.target.value })}>
+                <option value="">Status</option>
+                <option value="CONNECTED">CONNECTED</option>
+                <option value="DISCONNECTED">DISCONNECTED</option>
+                <option value="DISABLED">DISABLED</option>
+                <option value="UNKNOWN">UNKNOWN</option>
+              </select>
+              <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" placeholder="VLAN" value={portPatch.vlan} onChange={(event) => setPortPatch({ ...portPatch, vlan: event.target.value })} />
+              <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" placeholder="Patch panel" value={portPatch.patchPanel} onChange={(event) => setPortPatch({ ...portPatch, patchPanel: event.target.value })} />
+              <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" placeholder="Notes" value={portPatch.notes} onChange={(event) => setPortPatch({ ...portPatch, notes: event.target.value })} />
+              <Button type="button" onClick={applyBulkEdit}>Apply To Selected</Button>
+            </div>
+          )}
+        </Card>
+      )}
+
       <Card>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="text-xs uppercase text-slate-400">
               <tr>
+                {(active === "devices" || active === "ports") && <th className="p-2">Select</th>}
                 <th className="p-2">Name</th>
                 <th className="p-2">Location / Parent</th>
                 <th className="p-2">Details</th>
@@ -90,6 +153,11 @@ export function MasterDataPage() {
             <tbody>
               {rows.map((row: any) => (
                 <tr key={row.id} className="border-t border-white/10">
+                  {(active === "devices" || active === "ports") && (
+                    <td className="p-2">
+                      <input type="checkbox" checked={selectedIds.includes(row.id)} onChange={() => toggleSelection(row.id)} />
+                    </td>
+                  )}
                   <td className="p-2 font-semibold">{row.name ?? row.portLabel}</td>
                   <td className="p-2 text-slate-300">
                     {active === "buildings" && `${row.blocks.length} blocks`}

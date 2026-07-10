@@ -19,6 +19,7 @@ type QrItem = {
 export function QrCodesPage() {
   const [items, setItems] = useState<QrItem[]>([]);
   const [filter, setFilter] = useState("all");
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [qrBaseUrl, setQrBaseUrl] = useState("");
   const [printSettings, setPrintSettings] = useState({ qrLabelWidthMm: 90, qrLabelHeightMm: 45, qrLabelColumns: 2, qrLabelRows: 6 });
 
@@ -36,6 +37,10 @@ export function QrCodesPage() {
   }, []);
 
   const filtered = filter === "all" ? items : items.filter((item) => item.type === filter);
+  function toggleSelection(item: QrItem) {
+    const key = `${item.type}-${item.id}`;
+    setSelectedKeys((current) => (current.includes(key) ? current.filter((value) => value !== key) : [...current, key]));
+  }
 
   return (
     <div className="space-y-4">
@@ -52,8 +57,14 @@ export function QrCodesPage() {
             <QrCode size={16} /> {type}
           </Button>
         ))}
+        <Button variant="secondary" onClick={() => setSelectedKeys(filtered.map((item) => `${item.type}-${item.id}`))}>
+          Select Visible
+        </Button>
+        <Button variant="secondary" onClick={() => setSelectedKeys([])}>
+          Clear Selection
+        </Button>
         <Button variant="secondary" onClick={() => window.print()}>
-          <Printer size={16} /> Print Sheet
+          <Printer size={16} /> Print {selectedKeys.length || filtered.length}
         </Button>
         <Link className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold" to="/admin">
           <Settings size={16} /> QR Settings
@@ -68,11 +79,18 @@ export function QrCodesPage() {
           "--qr-label-columns": printSettings.qrLabelColumns,
         } as CSSProperties}
       >
-        {filtered.map((item) => (
-          <Card key={`${item.type}-${item.id}`} className="qr-sticker">
+        {filtered.map((item) => {
+          const key = `${item.type}-${item.id}`;
+          const selected = selectedKeys.includes(key);
+          return (
+          <Card key={key} className={`qr-sticker ${selectedKeys.length > 0 && !selected ? "print:hidden opacity-60" : ""}`}>
             <div className="flex items-start gap-4">
               <img src={item.qrUrl} alt={`${item.label} QR`} className="h-28 w-28 rounded-lg bg-white p-2" />
               <div className="min-w-0 flex-1">
+                <label className="print:hidden mb-2 flex items-center gap-2 text-xs">
+                  <input type="checkbox" checked={selected} onChange={() => toggleSelection(item)} />
+                  Select for print
+                </label>
                 <div className="text-xs font-bold uppercase text-cyan-300">{item.type}</div>
                 <h2 className="truncate text-lg font-black">{item.label}</h2>
                 <p className="muted-copy mb-3 text-sm">{item.location}</p>
@@ -80,7 +98,8 @@ export function QrCodesPage() {
               </div>
             </div>
           </Card>
-        ))}
+        );
+        })}
       </div>
     </div>
   );

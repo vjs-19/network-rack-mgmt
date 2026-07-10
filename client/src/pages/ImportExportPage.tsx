@@ -109,7 +109,7 @@ export function ImportExportPage() {
           </div>
           <h1 className="text-3xl font-black">Import / Export Master Data</h1>
           <p className="muted-copy mt-2 max-w-3xl text-sm leading-6">
-            Download the templates, fill the required columns in Excel, then upload the file back here. Import order should be Locations, Racks, Devices, then Ports.
+            Download templates, fill Excel, preview validation, then import. The preview checks required fields, duplicate device/IP/MAC/cable data, numeric fields, and allowed statuses.
           </p>
         </div>
       </section>

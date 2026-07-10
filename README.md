@@ -36,6 +36,9 @@ The app is built for desktop and mobile browsers so IT staff can update rack and
 - Full role enforcement: `admin`, `editor`, `viewer`
 - User password change and admin password reset
 - Excel import validation preview before saving data
+- Duplicate checks for device names, IP addresses, MAC addresses, switch ports, and cable labels
+- Bulk edit for selected devices and switch ports
+- QR print selection for chosen rack/device stickers
 - QR sticker paper size settings
 - Room drawing upload with rack X/Y placement
 - PostgreSQL backup and restore scripts
@@ -360,7 +363,27 @@ Recommended import order:
 3. Devices / Switches
 4. Switch Ports
 
-Use **Preview** before importing. The app checks required columns, numeric fields, and allowed status values. If errors appear, fix the listed Excel row/field and preview again. The real import button is intended to be used only after validation passes.
+Use **Preview** before importing. The app checks required columns, duplicate values, existing IP/MAC/cable conflicts, numeric fields, and allowed status values. If errors appear, fix the listed Excel row/field and preview again. The real import button is intended to be used only after validation passes.
+
+## Bulk Edit
+
+Open:
+
+```text
+/master-data
+```
+
+On the Devices and Ports tabs, select multiple rows and apply shared values in one action. This is useful after importing real office data when many ports need the same VLAN, patch panel, status, or notes.
+
+## QR Print Selection
+
+Open:
+
+```text
+/qr-codes
+```
+
+Use the checkboxes to select only the QR stickers you want to print. If nothing is selected, the page prints all visible QR cards for the active filter.
 
 ### Locations Columns
 
