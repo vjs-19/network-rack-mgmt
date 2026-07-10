@@ -7,7 +7,7 @@ import QRCode from "qrcode";
 import XLSX from "xlsx";
 import { z } from "zod";
 
-import { requireAdmin, requireAuth, signToken } from "./auth.js";
+import { requireAdmin, requireAuth, requireEditor, signToken } from "./auth.js";
 import { prisma } from "./prisma.js";
 
 const app = express();
@@ -87,6 +87,70 @@ function cell(row: Record<string, unknown>, key: string) {
 function numberCell(row: Record<string, unknown>, key: string, fallback = 0) {
   const value = Number(row[key]);
   return Number.isFinite(value) ? value : fallback;
+}
+
+function optionalQuery(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function auditWhereFromQuery(req: express.Request) {
+  const action = optionalQuery(req.query.action);
+  const entity = optionalQuery(req.query.entity);
+  const user = optionalQuery(req.query.user);
+  const from = optionalQuery(req.query.from);
+  const to = optionalQuery(req.query.to);
+
+  return {
+    ...(action ? { action: { contains: action, mode: "insensitive" as const } } : {}),
+    ...(entity ? { entity: { contains: entity, mode: "insensitive" as const } } : {}),
+    ...(user ? { details: { contains: user, mode: "insensitive" as const } } : {}),
+    ...(from || to
+      ? {
+          createdAt: {
+            ...(from ? { gte: new Date(from) } : {}),
+            ...(to ? { lte: new Date(to) } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
+function validateImportRows(type: ImportType, rows: Record<string, unknown>[]) {
+  const required: Record<ImportType, string[]> = {
+    locations: ["buildingName", "blockName", "floorLevel", "hubRoomName"],
+    racks: ["buildingName", "blockName", "hubRoomName", "rackName", "unitCount"],
+    devices: ["hubRoomName", "rackName", "deviceName", "deviceType", "startUnit"],
+    ports: ["switchName", "portNumber", "status"],
+  };
+  const allowedStatuses = new Set(["CONNECTED", "DISCONNECTED", "DISABLED", "UNKNOWN"]);
+  const errors: Array<{ row: number; field: string; message: string }> = [];
+
+  rows.forEach((row, index) => {
+    const rowNumber = index + 2;
+    for (const field of required[type]) {
+      if (!cell(row, field)) {
+        errors.push({ row: rowNumber, field, message: `${field} is required` });
+      }
+    }
+
+    if (type === "locations" && !Number.isFinite(Number(row.floorLevel))) {
+      errors.push({ row: rowNumber, field: "floorLevel", message: "floorLevel must be a number" });
+    }
+    if (type === "racks" && !Number.isFinite(Number(row.unitCount))) {
+      errors.push({ row: rowNumber, field: "unitCount", message: "unitCount must be a number" });
+    }
+    if (type === "devices") {
+      if (!Number.isFinite(Number(row.startUnit))) errors.push({ row: rowNumber, field: "startUnit", message: "startUnit must be a number" });
+      if (cell(row, "heightUnits") && !Number.isFinite(Number(row.heightUnits))) errors.push({ row: rowNumber, field: "heightUnits", message: "heightUnits must be a number" });
+    }
+    if (type === "ports") {
+      if (!Number.isFinite(Number(row.portNumber))) errors.push({ row: rowNumber, field: "portNumber", message: "portNumber must be a number" });
+      const status = cell(row, "status") || "UNKNOWN";
+      if (!allowedStatuses.has(status)) errors.push({ row: rowNumber, field: "status", message: "status must be CONNECTED, DISCONNECTED, DISABLED, or UNKNOWN" });
+    }
+  });
+
+  return { valid: errors.length === 0, totalRows: rows.length, errors, previewRows: rows.slice(0, 10) };
 }
 
 function workbookResponse(res: express.Response, fileName: string, rows: Record<string, unknown>[]) {
@@ -291,15 +355,50 @@ app.get("/api/master-data", requireAuth, async (_req, res) => {
   res.json({ buildings, blocks, floors, hubRooms, racks, devices, ports });
 });
 
-app.get("/api/audit-logs", requireAuth, async (_req, res) => {
-  const logs = await prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 200 });
+app.get("/api/audit-logs", requireAuth, async (req, res) => {
+  const logs = await prisma.auditLog.findMany({ where: auditWhereFromQuery(req), orderBy: { createdAt: "desc" }, take: 500 });
   res.json(logs);
+});
+
+app.get("/api/audit-logs/export", requireAuth, requireEditor, async (req, res) => {
+  const logs = await prisma.auditLog.findMany({ where: auditWhereFromQuery(req), orderBy: { createdAt: "desc" }, take: 5000 });
+  workbookResponse(
+    res,
+    "audit-logs-export.xlsx",
+    logs.map((log) => {
+      let user = "system";
+      let role = "";
+      let detail = log.details ?? "";
+      try {
+        const parsed = JSON.parse(log.details ?? "{}");
+        user = parsed.user ?? user;
+        role = parsed.role ?? role;
+        detail = JSON.stringify(parsed.details ?? {});
+      } catch {
+        // keep raw detail
+      }
+      return {
+        time: log.createdAt.toISOString(),
+        action: log.action,
+        entity: log.entity,
+        entityId: log.entityId ?? "",
+        user,
+        role,
+        detail,
+      };
+    })
+  );
 });
 
 app.get("/api/settings", requireAuth, async (_req, res) => {
   const settings = await prisma.appSetting.findMany({ orderBy: { key: "asc" } });
   res.json({
     qrBaseUrl: settings.find((setting) => setting.key === "qrBaseUrl")?.value ?? "",
+    qrPaperSize: settings.find((setting) => setting.key === "qrPaperSize")?.value ?? "A4",
+    qrLabelWidthMm: Number(settings.find((setting) => setting.key === "qrLabelWidthMm")?.value ?? 90),
+    qrLabelHeightMm: Number(settings.find((setting) => setting.key === "qrLabelHeightMm")?.value ?? 45),
+    qrLabelColumns: Number(settings.find((setting) => setting.key === "qrLabelColumns")?.value ?? 2),
+    qrLabelRows: Number(settings.find((setting) => setting.key === "qrLabelRows")?.value ?? 6),
     settings,
   });
 });
@@ -314,6 +413,48 @@ app.put("/api/settings/qr-base-url", requireAuth, requireAdmin, async (req, res)
   });
   await logAudit(req, "UPDATE", "Setting", setting.id, { key: "qrBaseUrl", value: qrBaseUrl });
   res.json({ qrBaseUrl: setting.value });
+});
+
+app.put("/api/settings/qr-print", requireAuth, requireAdmin, async (req, res) => {
+  const schema = z.object({
+    qrPaperSize: z.string().default("A4"),
+    qrLabelWidthMm: z.number().min(20).max(200).default(90),
+    qrLabelHeightMm: z.number().min(20).max(200).default(45),
+    qrLabelColumns: z.number().min(1).max(6).default(2),
+    qrLabelRows: z.number().min(1).max(20).default(6),
+  });
+  const data = schema.parse(req.body);
+  await Promise.all(
+    Object.entries(data).map(([key, value]) =>
+      prisma.appSetting.upsert({
+        where: { key },
+        update: { value: String(value), notes: "QR printable sticker sheet setting." },
+        create: { key, value: String(value), notes: "QR printable sticker sheet setting." },
+      })
+    )
+  );
+  await logAudit(req, "UPDATE", "Setting", "qr-print", data);
+  res.json(data);
+});
+
+app.put("/api/auth/change-password", requireAuth, async (req, res) => {
+  const schema = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(6) });
+  const data = schema.parse(req.body);
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  if (!user || !bcrypt.compareSync(data.currentPassword, user.passwordHash)) {
+    return res.status(400).json({ message: "Current password is incorrect" });
+  }
+  await prisma.user.update({ where: { id: user.id }, data: { passwordHash: bcrypt.hashSync(data.newPassword, 10) } });
+  await logAudit(req, "UPDATE", "UserPassword", user.id, { email: user.email });
+  res.json({ message: "Password changed" });
+});
+
+app.put("/api/users/:id/reset-password", requireAuth, requireAdmin, async (req, res) => {
+  const schema = z.object({ password: z.string().min(6) });
+  const data = schema.parse(req.body);
+  const user = await prisma.user.update({ where: { id: param(req.params.id) }, data: { passwordHash: bcrypt.hashSync(data.password, 10) } });
+  await logAudit(req, "UPDATE", "UserPassword", user.id, { email: user.email, resetByAdmin: true });
+  res.json({ message: "Password reset" });
 });
 
 app.get("/api/users", requireAuth, requireAdmin, async (_req, res) => {
@@ -383,7 +524,7 @@ app.get("/api/alerts", requireAuth, async (_req, res) => {
   res.json(alerts);
 });
 
-app.post("/api/alerts", requireAuth, requireAdmin, async (req, res) => {
+app.post("/api/alerts", requireAuth, requireEditor, async (req, res) => {
   const schema = z.object({
     title: z.string().min(1),
     severity: z.string().default("info"),
@@ -396,7 +537,7 @@ app.post("/api/alerts", requireAuth, requireAdmin, async (req, res) => {
   res.status(201).json(alert);
 });
 
-app.put("/api/alerts/:id", requireAuth, requireAdmin, async (req, res) => {
+app.put("/api/alerts/:id", requireAuth, requireEditor, async (req, res) => {
   const schema = z.object({ status: z.string().min(1) });
   const alert = await prisma.alert.update({ where: { id: param(req.params.id) }, data: schema.parse(req.body) });
   await logAudit(req, "UPDATE", "Alert", alert.id, { status: alert.status });
@@ -416,7 +557,7 @@ app.get("/api/discovery/runs", requireAuth, async (_req, res) => {
   res.json(runs);
 });
 
-app.post("/api/discovery/run", requireAuth, requireAdmin, async (req, res) => {
+app.post("/api/discovery/run", requireAuth, requireEditor, async (req, res) => {
   const schema = z.object({ type: z.string().default("SNMP_LLDP_DUMMY"), target: z.string().optional() });
   const data = schema.parse(req.body);
   const details = {
@@ -591,7 +732,7 @@ app.get("/api/cable-trace", requireAuth, async (req, res) => {
   res.json([...deviceResults, ...portResults]);
 });
 
-app.put("/api/buildings/:id", requireAuth, requireAdmin, async (req, res) => {
+app.put("/api/buildings/:id", requireAuth, requireEditor, async (req, res) => {
   const schema = z.object({ name: z.string().min(1) });
   const building = await prisma.building.update({ where: { id: param(req.params.id) }, data: schema.parse(req.body) });
   await logAudit(req, "UPDATE", "Building", building.id, { name: building.name });
@@ -606,7 +747,7 @@ app.delete("/api/buildings/:id", requireAuth, requireAdmin, async (req, res) => 
   res.status(204).send();
 });
 
-app.post("/api/locations", requireAuth, async (req, res) => {
+app.post("/api/locations", requireAuth, requireEditor, async (req, res) => {
   const schema = z.object({
     buildingName: z.string().min(1),
     blockName: z.string().min(1),
@@ -646,14 +787,14 @@ app.get("/api/hub-rooms/:id", requireAuth, async (req, res) => {
   res.json(hubRoom);
 });
 
-app.post("/api/hub-rooms", requireAuth, async (req, res) => {
+app.post("/api/hub-rooms", requireAuth, requireEditor, async (req, res) => {
   const schema = z.object({ name: z.string(), floorId: z.string(), type: z.string().optional(), notes: z.string().optional() });
   const hubRoom = await prisma.hubRoom.create({ data: schema.parse(req.body) });
   await logAudit(req, "CREATE", "HubRoom", hubRoom.id, { name: hubRoom.name });
   res.status(201).json(hubRoom);
 });
 
-app.put("/api/hub-rooms/:id", requireAuth, async (req, res) => {
+app.put("/api/hub-rooms/:id", requireAuth, requireEditor, async (req, res) => {
   const hubRoom = await prisma.hubRoom.update({ where: { id: param(req.params.id) }, data: req.body });
   await logAudit(req, "UPDATE", "HubRoom", hubRoom.id, req.body);
   res.json(hubRoom);
@@ -690,7 +831,7 @@ app.get("/api/racks/:id", requireAuth, async (req, res) => {
   res.json(rack);
 });
 
-app.post("/api/racks", requireAuth, async (req, res) => {
+app.post("/api/racks", requireAuth, requireEditor, async (req, res) => {
   const schema = z.object({
     name: z.string(),
     hubRoomId: z.string(),
@@ -705,10 +846,29 @@ app.post("/api/racks", requireAuth, async (req, res) => {
   res.status(201).json(rack);
 });
 
-app.put("/api/racks/:id", requireAuth, async (req, res) => {
+app.put("/api/racks/:id", requireAuth, requireEditor, async (req, res) => {
   const rack = await prisma.rack.update({ where: { id: param(req.params.id) }, data: req.body });
   await logAudit(req, "UPDATE", "Rack", rack.id, req.body);
   res.json(rack);
+});
+
+app.put("/api/hub-rooms/:id/rack-positions", requireAuth, requireEditor, async (req, res) => {
+  const schema = z.object({
+    racks: z.array(z.object({ id: z.string(), positionX: z.number(), positionY: z.number() })),
+  });
+  const data = schema.parse(req.body);
+  const hubRoomId = param(req.params.id);
+  const updated = [];
+  for (const rack of data.racks) {
+    await prisma.rack.updateMany({
+      where: { id: rack.id, hubRoomId },
+      data: { positionX: rack.positionX, positionY: rack.positionY },
+    });
+    const saved = await prisma.rack.findUnique({ where: { id: rack.id } });
+    if (saved) updated.push(saved);
+  }
+  await logAudit(req, "UPDATE", "RackPositions", hubRoomId, data);
+  res.json(updated);
 });
 
 app.delete("/api/racks/:id", requireAuth, requireAdmin, async (req, res) => {
@@ -728,7 +888,7 @@ app.get("/api/devices/:id", requireAuth, async (req, res) => {
   res.json(device);
 });
 
-app.post("/api/devices", requireAuth, async (req, res) => {
+app.post("/api/devices", requireAuth, requireEditor, async (req, res) => {
   const { portCount, copperPortCount, sfpPortCount, socketCount, ...deviceInput } = req.body;
   const device = await prisma.device.create({ data: deviceInput });
 
@@ -782,7 +942,7 @@ app.post("/api/devices", requireAuth, async (req, res) => {
   res.status(201).json(device);
 });
 
-app.put("/api/devices/:id", requireAuth, async (req, res) => {
+app.put("/api/devices/:id", requireAuth, requireEditor, async (req, res) => {
   const device = await prisma.device.update({ where: { id: param(req.params.id) }, data: req.body });
   await syncDeviceToRackUnits(device);
   await logAudit(req, "UPDATE", "Device", device.id, req.body);
@@ -798,13 +958,13 @@ app.delete("/api/devices/:id", requireAuth, requireAdmin, async (req, res) => {
   res.status(204).send();
 });
 
-app.put("/api/ports/:id", requireAuth, async (req, res) => {
+app.put("/api/ports/:id", requireAuth, requireEditor, async (req, res) => {
   const portRow = await prisma.switchPort.update({ where: { id: param(req.params.id) }, data: req.body });
   await logAudit(req, "UPDATE", "Port", portRow.id, { portLabel: portRow.portLabel, ...req.body });
   res.json(portRow);
 });
 
-app.delete("/api/ports/:id/connection", requireAuth, async (req, res) => {
+app.delete("/api/ports/:id/connection", requireAuth, requireEditor, async (req, res) => {
   const portRow = await prisma.switchPort.update({
     where: { id: param(req.params.id) },
     data: {
@@ -820,7 +980,7 @@ app.delete("/api/ports/:id/connection", requireAuth, async (req, res) => {
   res.json(portRow);
 });
 
-app.post("/api/uploads", requireAuth, upload.single("file"), async (req, res) => {
+app.post("/api/uploads", requireAuth, requireEditor, upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ message: "No file uploaded" });
   const file = await prisma.uploadedFile.create({
     data: {
@@ -996,12 +1156,26 @@ app.get("/api/import-export/export/:type", requireAuth, async (req, res) => {
   );
 });
 
-app.post("/api/import-export/import/:type", requireAuth, importUpload.single("file"), async (req, res) => {
+app.post("/api/import-export/preview/:type", requireAuth, requireEditor, importUpload.single("file"), async (req, res) => {
   const type = param(req.params.type) as ImportType;
   if (!(type in templateColumns)) return res.status(404).json({ message: "Unknown import type" });
   if (!req.file) return res.status(400).json({ message: "No Excel file uploaded" });
 
   const rows = readWorkbookRows(req.file);
+  const validation = validateImportRows(type, rows);
+  res.json(validation);
+});
+
+app.post("/api/import-export/import/:type", requireAuth, requireEditor, importUpload.single("file"), async (req, res) => {
+  const type = param(req.params.type) as ImportType;
+  if (!(type in templateColumns)) return res.status(404).json({ message: "Unknown import type" });
+  if (!req.file) return res.status(400).json({ message: "No Excel file uploaded" });
+
+  const rows = readWorkbookRows(req.file);
+  const validation = validateImportRows(type, rows);
+  if (!validation.valid) {
+    return res.status(400).json({ imported: 0, errors: validation.errors.map((error) => `Row ${error.row}: ${error.message}`), validation });
+  }
   let imported = 0;
   const errors: string[] = [];
 

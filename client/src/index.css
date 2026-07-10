@@ -274,12 +274,14 @@ body {
 
   .qr-print-grid {
     display: grid !important;
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(var(--qr-label-columns, 2), var(--qr-label-width, 90mm)) !important;
     gap: 12px !important;
   }
 
   .qr-sticker {
     break-inside: avoid;
+    width: var(--qr-label-width, 90mm) !important;
+    min-height: var(--qr-label-height, 45mm) !important;
     border: 1px solid #cbd5e1 !important;
     background: #ffffff !important;
     color: #111827 !important;

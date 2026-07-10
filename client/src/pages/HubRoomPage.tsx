@@ -1,11 +1,11 @@
 import { Plus, QrCode, Trash2, Upload } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input, Textarea } from "../components/ui/input";
-import { apiFetch } from "../lib/api";
+import { apiFetch, getToken } from "../lib/api";
 import type { HubRoom } from "../types";
 
 export function HubRoomPage() {
@@ -13,6 +13,7 @@ export function HubRoomPage() {
   const navigate = useNavigate();
   const [room, setRoom] = useState<HubRoom | null>(null);
   const [message, setMessage] = useState("");
+  const [calibration, setCalibration] = useState<Record<string, { positionX: number; positionY: number }>>({});
   const [rackForm, setRackForm] = useState({
     name: "",
     unitCount: 45,
@@ -24,6 +25,7 @@ export function HubRoomPage() {
   async function loadRoom() {
     const nextRoom = await apiFetch<HubRoom>(`/api/hub-rooms/${id}`);
     setRoom(nextRoom);
+    setCalibration(Object.fromEntries(nextRoom.racks.map((rack) => [rack.id, { positionX: rack.positionX, positionY: rack.positionY }])));
     setRackForm((current) => ({
       ...current,
       name: current.name || `Rack ${String.fromCharCode(65 + nextRoom.racks.length)}`,
@@ -72,6 +74,39 @@ export function HubRoomPage() {
     navigate("/");
   }
 
+  async function uploadRoomLayout(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || !room) return;
+    const body = new FormData();
+    body.append("file", file);
+    body.append("purpose", "hub-room-layout");
+    const token = getToken();
+    const uploadResponse = await fetch("/api/uploads", {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body,
+    });
+    const uploaded = await uploadResponse.json();
+    await apiFetch(`/api/hub-rooms/${room.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ layoutImage: uploaded.path }),
+    });
+    setMessage("Room layout uploaded.");
+    loadRoom();
+  }
+
+  async function saveRackPositions() {
+    if (!room) return;
+    await apiFetch(`/api/hub-rooms/${room.id}/rack-positions`, {
+      method: "PUT",
+      body: JSON.stringify({
+        racks: Object.entries(calibration).map(([id, position]) => ({ id, ...position })),
+      }),
+    });
+    setMessage("Rack positions saved.");
+    loadRoom();
+  }
+
   if (!room) return <div>Loading hub room...</div>;
 
   return (
@@ -82,7 +117,10 @@ export function HubRoomPage() {
           <p className="text-sm text-slate-400">{room.floor.block.name} / {room.floor.name}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="secondary"><Upload size={16} /> Upload Room Layout</Button>
+          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold transition hover:bg-white/15">
+            <Upload size={16} /> Upload Room Layout
+            <input className="hidden" type="file" accept="image/*" onChange={uploadRoomLayout} />
+          </label>
           <Button variant="secondary"><QrCode size={16} /> Hub QR</Button>
           <Button variant="danger" onClick={deleteHubRoom}><Trash2 size={16} /> Delete Hub Room</Button>
         </div>
@@ -90,13 +128,17 @@ export function HubRoomPage() {
 
       <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
         <Card>
-          <div className="relative min-h-[520px] overflow-hidden rounded-xl border border-white/10 bg-slate-950/40 p-6">
+          <div
+            className="relative min-h-[520px] overflow-hidden rounded-xl border border-white/10 bg-slate-950/40 p-6"
+            style={room.layoutImage ? { backgroundImage: `linear-gradient(rgba(2,6,23,.45), rgba(2,6,23,.45)), url(${room.layoutImage})`, backgroundSize: "contain", backgroundRepeat: "no-repeat", backgroundPosition: "center" } : undefined}
+          >
             <div className="absolute inset-4 rounded-xl border border-dashed border-cyan-300/30" />
-            <div className="relative grid gap-5 sm:grid-cols-3">
+            <div className="relative min-h-[450px]">
               {room.racks.map((rack) => (
                 <div
                   key={rack.id}
-                  className="group rounded-xl border border-cyan-300/30 bg-cyan-300/10 p-4 text-center transition hover:-translate-y-2 hover:bg-cyan-300/20"
+                  className="group absolute rounded-xl border border-cyan-300/30 bg-cyan-300/10 p-4 text-center transition hover:-translate-y-2 hover:bg-cyan-300/20"
+                  style={{ left: `${rack.positionX}px`, top: `${rack.positionY}px` }}
                 >
                   <Link to={`/racks/${rack.id}`} className="block">
                     <div className="mx-auto mb-3 h-52 w-28 rounded-lg border-4 border-slate-500 bg-slate-900 shadow-2xl group-hover:border-cyan-300">
@@ -140,6 +182,20 @@ export function HubRoomPage() {
               <Textarea placeholder="Notes" value={rackForm.notes} onChange={(event) => setRackForm((current) => ({ ...current, notes: event.target.value }))} />
               <Button className="w-full">Create Rack Layout Item</Button>
             </form>
+          </Card>
+          <Card>
+            <h2 className="mb-2 font-black">Rack Layout Calibration</h2>
+            <p className="muted-copy mb-3 text-sm">Enter each rack X/Y position to match your uploaded room drawing.</p>
+            <div className="space-y-2">
+              {room.racks.map((rack) => (
+                <div key={rack.id} className="grid grid-cols-[1fr_90px_90px] items-center gap-2 rounded-lg bg-white/10 p-2">
+                  <div className="truncate text-sm font-semibold">{rack.name}</div>
+                  <Input type="number" value={calibration[rack.id]?.positionX ?? rack.positionX} onChange={(event) => setCalibration((current) => ({ ...current, [rack.id]: { positionX: Number(event.target.value), positionY: current[rack.id]?.positionY ?? rack.positionY } }))} />
+                  <Input type="number" value={calibration[rack.id]?.positionY ?? rack.positionY} onChange={(event) => setCalibration((current) => ({ ...current, [rack.id]: { positionX: current[rack.id]?.positionX ?? rack.positionX, positionY: Number(event.target.value) } }))} />
+                </div>
+              ))}
+            </div>
+            <Button className="mt-3 w-full" type="button" onClick={saveRackPositions}>Save Rack Positions</Button>
           </Card>
           <Card>
             <h2 className="mb-2 font-black">Room Layout Setup</h2>

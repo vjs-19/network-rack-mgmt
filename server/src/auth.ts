@@ -43,3 +43,10 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   }
   return next();
 }
+
+export function requireEditor(req: Request, res: Response, next: NextFunction) {
+  if (!req.user || !["admin", "editor"].includes(req.user.role)) {
+    return res.status(403).json({ message: "Editor access required" });
+  }
+  return next();
+}

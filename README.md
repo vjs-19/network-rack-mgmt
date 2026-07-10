@@ -33,6 +33,13 @@ The app is built for desktop and mobile browsers so IT staff can update rack and
 - Printable QR sticker sheet layout
 - Fixed QR base URL setting for permanent office server links
 - User role management UI
+- Full role enforcement: `admin`, `editor`, `viewer`
+- User password change and admin password reset
+- Excel import validation preview before saving data
+- QR sticker paper size settings
+- Room drawing upload and rack coordinate calibration
+- PostgreSQL backup and restore scripts
+- Audit activity report filtering and Excel export
 - Alerts and notifications starter module
 - SNMP/LLDP discovery placeholder module
 - Audit logs for create, update, delete, and port changes
@@ -353,6 +360,8 @@ Recommended import order:
 3. Devices / Switches
 4. Switch Ports
 
+Use **Preview** before importing. The app checks required columns, numeric fields, and allowed status values. If errors appear, fix the listed Excel row/field and preview again. The real import button is intended to be used only after validation passes.
+
 ### Locations Columns
 
 ```text
@@ -472,6 +481,8 @@ Audit logs record:
 
 Delete and other destructive actions require an admin user.
 
+The Audit page supports date, action, entity, and user/email filters. Use the export button to download the filtered audit activity as Excel.
+
 ### User Role Management
 
 Open:
@@ -486,8 +497,59 @@ Admins can:
 - Edit name, email, and role
 - Delete users
 - Set roles as `admin`, `editor`, or `viewer`
+- Reset another user's password
+- Change your own password
 
-Current backend enforcement protects admin-only destructive actions. More detailed per-role permissions can be expanded later.
+Role behavior:
+
+- `admin`: full access including settings, users, deletes, and password resets
+- `editor`: create/update operational data, import Excel, upload layouts, run discovery, and edit alerts
+- `viewer`: read-only access to dashboards, racks, devices, QR, reports, and search
+
+## Room Drawing And Rack Calibration
+
+Open a hub room page:
+
+```text
+/hub-rooms/HUB_ROOM_ID
+```
+
+Use **Upload Room Layout** to upload the actual room drawing/image. Then use **Rack Layout Calibration** to set each rack's X/Y position until the digital layout matches the physical room drawing.
+
+The saved X/Y positions are used when rendering racks on top of the uploaded room layout.
+
+## PostgreSQL Backup And Restore
+
+Windows backup:
+
+```powershell
+.\scripts\backup-db.ps1
+```
+
+Windows restore:
+
+```powershell
+.\scripts\restore-db.ps1 .\backups\rack-manager-YYYYMMDD-HHMMSS.sql
+```
+
+Linux backup:
+
+```bash
+chmod +x scripts/backup-db.sh scripts/restore-db.sh
+./scripts/backup-db.sh
+```
+
+Linux restore:
+
+```bash
+./scripts/restore-db.sh backups/rack-manager-YYYYMMDD-HHMMSS.sql
+```
+
+Backups are saved in:
+
+```text
+backups/
+```
 
 ## Alerts
 
@@ -573,9 +635,5 @@ The database and code are prepared for future modules such as:
 - Live switch port status
 - Ping online/offline checks
 - Alerts and notifications
-- More detailed audit reports
-- User roles and permissions
-- Real rack drawing calibration
-- Printable QR sticker sheets
 
 These are planned future integrations for production environments that need live network monitoring.

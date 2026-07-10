@@ -41,6 +41,8 @@ function authHeaders() {
 
 export function ImportExportPage() {
   const [message, setMessage] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<Record<string, File | undefined>>({});
+  const [previews, setPreviews] = useState<Record<string, { valid: boolean; totalRows: number; errors: Array<{ row: number; field: string; message: string }>; previewRows: Record<string, unknown>[] }>>({});
 
   async function download(path: string, fileName: string) {
     const response = await fetch(path, { headers: authHeaders() });
@@ -61,9 +63,30 @@ export function ImportExportPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function upload(type: string, event: ChangeEvent<HTMLInputElement>) {
+  async function preview(type: string, event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    setSelectedFiles((current) => ({ ...current, [type]: file }));
+
+    const body = new FormData();
+    body.append("file", file);
+
+    const response = await fetch(`/api/import-export/preview/${type}`, {
+      method: "POST",
+      headers: authHeaders(),
+      body
+    });
+    const result = await response.json();
+    setPreviews((current) => ({ ...current, [type]: result }));
+    setMessage(`${templateTypes.find((item) => item.id === type)?.title}: previewed ${result.totalRows} row(s). ${result.errors?.length ? `${result.errors.length} issue(s) found.` : "Ready to import."}`);
+  }
+
+  async function upload(type: string) {
+    const file = selectedFiles[type];
+    if (!file) {
+      setMessage("Choose and preview a file first.");
+      return;
+    }
 
     const body = new FormData();
     body.append("file", file);
@@ -110,18 +133,36 @@ export function ImportExportPage() {
               ))}
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-3">
+            <div className="grid gap-2 sm:grid-cols-4">
               <Button type="button" variant="secondary" onClick={() => download(`/api/import-export/templates/${item.id}`, `${item.id}-template.xlsx`)}>
                 <Download size={16} /> Template
               </Button>
               <Button type="button" variant="secondary" onClick={() => download(`/api/import-export/export/${item.id}`, `${item.id}-export.xlsx`)}>
                 <Download size={16} /> Export
               </Button>
-              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400">
-                <Upload size={16} /> Import
-                <input className="hidden" type="file" accept=".xlsx,.xls" onChange={(event) => upload(item.id, event)} />
+              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold transition hover:bg-white/15">
+                <Upload size={16} /> Preview
+                <input className="hidden" type="file" accept=".xlsx,.xls" onChange={(event) => preview(item.id, event)} />
               </label>
+              <Button type="button" onClick={() => upload(item.id)} disabled={!selectedFiles[item.id] || previews[item.id]?.valid === false}>
+                <Upload size={16} /> Import
+              </Button>
             </div>
+
+            {previews[item.id] && (
+              <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3">
+                <div className={previews[item.id].valid ? "text-sm font-bold text-emerald-200" : "text-sm font-bold text-rose-200"}>
+                  {previews[item.id].valid ? "Validation passed" : "Validation errors"} / {previews[item.id].totalRows} row(s)
+                </div>
+                {previews[item.id].errors.length > 0 && (
+                  <div className="mt-2 max-h-44 overflow-auto text-xs text-rose-200">
+                    {previews[item.id].errors.map((error, index) => (
+                      <div key={`${error.row}-${error.field}-${index}`}>Row {error.row} / {error.field}: {error.message}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </Card>
         ))}
       </div>

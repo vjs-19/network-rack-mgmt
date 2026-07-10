@@ -1,8 +1,9 @@
-import { ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Download, Search, ShieldCheck } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
 
+import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
-import { apiFetch } from "../lib/api";
+import { apiFetch, getToken } from "../lib/api";
 
 type AuditLog = {
   id: string;
@@ -25,17 +26,63 @@ function formatDetails(details: string | null) {
 
 export function AuditLogPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [filters, setFilters] = useState({ from: "", to: "", action: "", entity: "", user: "" });
+
+  function queryString() {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+    return params.toString();
+  }
+
+  async function loadLogs(event?: FormEvent) {
+    event?.preventDefault();
+    const query = queryString();
+    setLogs(await apiFetch<AuditLog[]>(`/api/audit-logs${query ? `?${query}` : ""}`));
+  }
+
+  async function exportLogs() {
+    const token = getToken();
+    const query = queryString();
+    const response = await fetch(`/api/audit-logs/export${query ? `?${query}` : ""}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "audit-logs-export.xlsx";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
 
   useEffect(() => {
-    apiFetch<AuditLog[]>("/api/audit-logs").then(setLogs);
+    loadLogs();
   }, []);
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-black">Audit Logs</h1>
-        <p className="muted-copy text-sm">Recent creates, updates, deletes, and port connection changes.</p>
+        <p className="muted-copy text-sm">Filter activity by date, user, action, and entity, then export the report.</p>
       </div>
+
+      <Card>
+        <form className="grid gap-3 md:grid-cols-6" onSubmit={loadLogs}>
+          <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" type="date" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} />
+          <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" type="date" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })} />
+          <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" placeholder="Action" value={filters.action} onChange={(event) => setFilters({ ...filters, action: event.target.value })} />
+          <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" placeholder="Entity" value={filters.entity} onChange={(event) => setFilters({ ...filters, entity: event.target.value })} />
+          <input className="rounded-lg border border-white/10 bg-slate-950/60 px-3 py-2" placeholder="User email" value={filters.user} onChange={(event) => setFilters({ ...filters, user: event.target.value })} />
+          <div className="flex gap-2">
+            <Button type="submit"><Search size={16} /> Filter</Button>
+            <Button type="button" variant="secondary" onClick={exportLogs}><Download size={16} /></Button>
+          </div>
+        </form>
+      </Card>
 
       <Card>
         <div className="overflow-x-auto">
