@@ -37,7 +37,7 @@ The app is built for desktop and mobile browsers so IT staff can update rack and
 - User password change and admin password reset
 - Excel import validation preview before saving data
 - QR sticker paper size settings
-- Room drawing upload and rack coordinate calibration
+- Room drawing upload with rack X/Y placement
 - PostgreSQL backup and restore scripts
 - Audit activity report filtering and Excel export
 - Alerts and notifications starter module
@@ -506,7 +506,7 @@ Role behavior:
 - `editor`: create/update operational data, import Excel, upload layouts, run discovery, and edit alerts
 - `viewer`: read-only access to dashboards, racks, devices, QR, reports, and search
 
-## Room Drawing And Rack Calibration
+## Room Drawing And Rack Placement
 
 Open a hub room page:
 
@@ -514,7 +514,7 @@ Open a hub room page:
 /hub-rooms/HUB_ROOM_ID
 ```
 
-Use **Upload Room Layout** to upload the actual room drawing/image. Then use **Rack Layout Calibration** to set each rack's X/Y position until the digital layout matches the physical room drawing.
+Use **Upload Room Layout** to upload the actual room drawing/image. When adding racks, set the rack X/Y position so the digital layout matches the physical room drawing.
 
 The saved X/Y positions are used when rendering racks on top of the uploaded room layout.
 

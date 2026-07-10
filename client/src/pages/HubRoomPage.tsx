@@ -13,7 +13,6 @@ export function HubRoomPage() {
   const navigate = useNavigate();
   const [room, setRoom] = useState<HubRoom | null>(null);
   const [message, setMessage] = useState("");
-  const [calibration, setCalibration] = useState<Record<string, { positionX: number; positionY: number }>>({});
   const [rackForm, setRackForm] = useState({
     name: "",
     unitCount: 45,
@@ -25,7 +24,6 @@ export function HubRoomPage() {
   async function loadRoom() {
     const nextRoom = await apiFetch<HubRoom>(`/api/hub-rooms/${id}`);
     setRoom(nextRoom);
-    setCalibration(Object.fromEntries(nextRoom.racks.map((rack) => [rack.id, { positionX: rack.positionX, positionY: rack.positionY }])));
     setRackForm((current) => ({
       ...current,
       name: current.name || `Rack ${String.fromCharCode(65 + nextRoom.racks.length)}`,
@@ -92,18 +90,6 @@ export function HubRoomPage() {
       body: JSON.stringify({ layoutImage: uploaded.path }),
     });
     setMessage("Room layout uploaded.");
-    loadRoom();
-  }
-
-  async function saveRackPositions() {
-    if (!room) return;
-    await apiFetch(`/api/hub-rooms/${room.id}/rack-positions`, {
-      method: "PUT",
-      body: JSON.stringify({
-        racks: Object.entries(calibration).map(([id, position]) => ({ id, ...position })),
-      }),
-    });
-    setMessage("Rack positions saved.");
     loadRoom();
   }
 
@@ -182,20 +168,6 @@ export function HubRoomPage() {
               <Textarea placeholder="Notes" value={rackForm.notes} onChange={(event) => setRackForm((current) => ({ ...current, notes: event.target.value }))} />
               <Button className="w-full">Create Rack Layout Item</Button>
             </form>
-          </Card>
-          <Card>
-            <h2 className="mb-2 font-black">Rack Layout Calibration</h2>
-            <p className="muted-copy mb-3 text-sm">Enter each rack X/Y position to match your uploaded room drawing.</p>
-            <div className="space-y-2">
-              {room.racks.map((rack) => (
-                <div key={rack.id} className="grid grid-cols-[1fr_90px_90px] items-center gap-2 rounded-lg bg-white/10 p-2">
-                  <div className="truncate text-sm font-semibold">{rack.name}</div>
-                  <Input type="number" value={calibration[rack.id]?.positionX ?? rack.positionX} onChange={(event) => setCalibration((current) => ({ ...current, [rack.id]: { positionX: Number(event.target.value), positionY: current[rack.id]?.positionY ?? rack.positionY } }))} />
-                  <Input type="number" value={calibration[rack.id]?.positionY ?? rack.positionY} onChange={(event) => setCalibration((current) => ({ ...current, [rack.id]: { positionX: current[rack.id]?.positionX ?? rack.positionX, positionY: Number(event.target.value) } }))} />
-                </div>
-              ))}
-            </div>
-            <Button className="mt-3 w-full" type="button" onClick={saveRackPositions}>Save Rack Positions</Button>
           </Card>
           <Card>
             <h2 className="mb-2 font-black">Room Layout Setup</h2>
