@@ -22,7 +22,7 @@ export function AppLayout() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
           <Link to="/" className="flex items-center gap-3 font-bold">
             <div className="brand-logo-shell">
-              <img src="/assets/dp-logo.webp" alt="Data Patterns" className="brand-logo" />
+              <img src="/assets/dp-logo.jpg" alt="Data Patterns" className="brand-logo" />
             </div>
             <div className="leading-tight">
               <div>Network Rack Manager</div>
